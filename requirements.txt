@@ -12,8 +12,9 @@ asyncpg==0.29.0
 alembic==1.13.2
 
 # --- Auth (added when we build the auth module in Phase 2) ---
-# python-jose[cryptography]==3.3.0
-# passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 
 # --- Dev tooling ---
 pytest==8.3.3
