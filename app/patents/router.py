@@ -11,7 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.patents.dependencies_stub import FakeUser, get_current_user_stub as get_current_user
+from app.auth.dependencies import get_current_user
+from app.auth.models import User
 from app.patents.models import Patent, PatentStatus
 from app.patents.schemas import (
     PatentCreate,
@@ -26,7 +27,7 @@ router = APIRouter()
 EDITABLE_STATUSES = {PatentStatus.DRAFT, PatentStatus.REJECTED}
 
 
-async def _get_owned_patent(patent_id: int, user: FakeUser, db: AsyncSession) -> Patent:
+async def _get_owned_patent(patent_id: int, user: User, db: AsyncSession) -> Patent:
     """Fetch a patent and verify the current user may act on it (owner or admin)."""
     patent = await db.get(Patent, patent_id)
     if patent is None:
@@ -39,7 +40,7 @@ async def _get_owned_patent(patent_id: int, user: FakeUser, db: AsyncSession) ->
 @router.post("", response_model=PatentOut, status_code=status.HTTP_201_CREATED)
 async def create_patent(
     body: PatentCreate,
-    user: FakeUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Patent:
     patent = Patent(
@@ -81,7 +82,7 @@ async def browse_listed_patents(
 async def list_my_patents(
     limit: int = Query(default=20, le=100),
     offset: int = Query(default=0, ge=0),
-    user: FakeUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[Patent]:
     """All of the current user's patents, any status — their own dashboard."""
@@ -98,7 +99,7 @@ async def list_my_patents(
 @router.get("/{patent_id}", response_model=PatentOut)
 async def get_patent(
     patent_id: int,
-    user: FakeUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Patent:
     return await _get_owned_patent(patent_id, user, db)
@@ -108,7 +109,7 @@ async def get_patent(
 async def update_patent(
     patent_id: int,
     body: PatentUpdate,
-    user: FakeUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Patent:
     patent = await _get_owned_patent(patent_id, user, db)
@@ -132,7 +133,7 @@ async def update_patent(
 async def submit_for_verification(
     patent_id: int,
     body: PatentSubmitForVerification,
-    user: FakeUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Patent:
     """DRAFT/REJECTED -> PENDING_VERIFICATION. Verification track picks it up from here."""
@@ -156,7 +157,7 @@ async def submit_for_verification(
 @router.delete("/{patent_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_patent(
     patent_id: int,
-    user: FakeUser = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     patent = await _get_owned_patent(patent_id, user, db)

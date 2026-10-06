@@ -16,7 +16,7 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
@@ -69,8 +69,6 @@ class Patent(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    # TODO (integration step, once app.auth.models.User exists):
-    #   owner: Mapped["User"] = relationship("User", lazy="joined", viewonly=True)
-    # relationship() needs a real mapped class, not just a table, so this
-    # can't be added until the Auth track's User model is merged. Nothing
-    # in the Patents module currently needs `.owner` — owner_id is enough.
+    # Relationship back to User (Auth track). viewonly=True — write ownership
+    # via owner_id only; use .owner for reads/joins.
+    owner: Mapped["User"] = relationship("User", lazy="joined", viewonly=True)

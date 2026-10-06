@@ -35,10 +35,11 @@ async def health() -> dict[str, str]:
 
 
 # --- Routers, included as each module is built ---
-# from app.auth.router import router as auth_router
+from app.auth.router import router as auth_router
 from app.patents.router import router as patents_router
 # from app.verification.router import router as verification_router
 
-# app.include_router(auth_router, prefix="/auth", tags=["auth"])
+# NOTE: auth_router already declares prefix="/auth" internally — do NOT pass prefix here.
+app.include_router(auth_router, tags=["auth"])
 app.include_router(patents_router, prefix="/patents", tags=["patents"])
 # app.include_router(verification_router, prefix="/verification", tags=["verification"])

@@ -1,9 +1,3 @@
-"""
-Patents CRUD tests, run against the stub auth user (id=1, role=innovator
-— see app/patents/dependencies_stub.py). These exercise the module in
-full isolation from the Auth track.
-"""
-
 from httpx import AsyncClient
 
 
@@ -47,7 +41,6 @@ async def test_update_draft_patent_succeeds(client: AsyncClient) -> None:
     resp = await client.patch(f"/patents/{patent['id']}", json={"title": "Updated title"})
     assert resp.status_code == 200
     assert resp.json()["title"] == "Updated title"
-    # Unset fields are left untouched
     assert resp.json()["description"] == patent["description"]
 
 
@@ -108,14 +101,12 @@ async def test_create_patent_rejects_short_title(client: AsyncClient) -> None:
 
 
 async def test_browse_only_returns_listed_patents(client: AsyncClient, db_session) -> None:
-    # A draft patent should never appear in the public browse endpoint.
     await _create_draft(client)
 
     resp = await client.get("/patents")
     assert resp.status_code == 200
     assert resp.json() == []
 
-    # Manually promote one to LISTED (no Verification/AI module yet to do this for us).
     from app.patents.models import Patent, PatentStatus
 
     patent = (await db_session.execute(Patent.__table__.select())).first()
@@ -127,7 +118,6 @@ async def test_browse_only_returns_listed_patents(client: AsyncClient, db_sessio
     assert resp.status_code == 200
     body = resp.json()
     assert len(body) == 1
-    # Public view is trimmed — no owner_id, no proof_document_url.
     assert "owner_id" not in body[0]
     assert "proof_document_url" not in body[0]
     assert body[0]["title"] == "Self-healing polymer coating"
@@ -147,3 +137,33 @@ async def test_browse_respects_limit(client: AsyncClient, db_session) -> None:
     resp = await client.get("/patents", params={"limit": 2})
     assert resp.status_code == 200
     assert len(resp.json()) == 2
+
+
+async def test_cannot_edit_another_users_patent(client: AsyncClient, db_session) -> None:
+    """Ownership check now runs against a real second User row, not just a different int."""
+    from app.auth.models import User, UserRole
+    from app.patents.models import Patent, PatentStatus
+
+    other_owner = User(
+        email="someone-else@example.com",
+        password_hash="not-a-real-hash",
+        role=UserRole.INNOVATOR,
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add(other_owner)
+    await db_session.commit()
+    await db_session.refresh(other_owner)
+
+    other_patent = Patent(
+        owner_id=other_owner.id,
+        title="Someone else's invention",
+        description="Not yours to touch.",
+        status=PatentStatus.DRAFT,
+    )
+    db_session.add(other_patent)
+    await db_session.commit()
+    await db_session.refresh(other_patent)
+
+    resp = await client.get(f"/patents/{other_patent.id}")
+    assert resp.status_code == 403

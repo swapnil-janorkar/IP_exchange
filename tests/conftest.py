@@ -11,29 +11,15 @@ from collections.abc import AsyncGenerator
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import Column, Integer, Table
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.database import Base, get_db
 from app.main import app
 
 # Import models so their tables register on Base.metadata before create_all.
+from app.auth.models import User  # noqa: F401
 from app.patents.models import Patent  # noqa: F401
 
-# --- TEMPORARY: stub `users` table -----------------------------------------
-# `Patent.owner_id` has a ForeignKey("users.id"). Until the Auth track's
-# app.auth.models.User exists, create_all() has nothing to point that FK
-# at, so we register a minimal placeholder table here.
-#
-# ONCE app.auth.models.User EXISTS: delete this block and add
-#     from app.auth.models import User  # noqa: F401
-# alongside the Patent import above instead.
-_stub_users_table = Table(
-    "users",
-    Base.metadata,
-    Column("id", Integer, primary_key=True),
-)
-# -----------------------------------------------------------------------------
 
 
 @pytest_asyncio.fixture
