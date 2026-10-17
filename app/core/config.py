@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "dev-only-placeholder-change-before-auth-phase"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 7
+    cookie_secure: bool = False  # True in production (HTTPS only)
 
     # --- AI providers (Phase 5) ---
     openai_api_key: str | None = None

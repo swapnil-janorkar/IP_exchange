@@ -21,6 +21,12 @@ unauthenticated_client -- HTTP client with NO auth override; only get_db
 """
 
 from collections.abc import AsyncGenerator
+import os
+
+# Set minimal env vars before any app module is imported (pydantic-settings reads
+# env at import time). These are safe defaults for the test suite only.
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-key-do-not-use-in-prod")
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -28,11 +34,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.auth.dependencies import get_current_user
 from app.auth.models import User, UserRole  # noqa: F401
+from app.auth.refresh_token_models import RefreshToken  # noqa: F401
+from app.core.audit_models import AuditLog  # noqa: F401
 from app.core.database import Base, get_db
 from app.main import app
 
 # Import models so their tables register on Base.metadata before create_all.
 from app.patents.models import Patent  # noqa: F401
+from app.patents.exchange_models import Deal, Document, Embedding, Signature  # noqa: F401
+from app.ipvexa.models import IPRRecord, Job, Service, ServiceRequest, WorkReport  # noqa: F401
 
 
 # ---------------------------------------------------------------------------

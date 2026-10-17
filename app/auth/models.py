@@ -8,9 +8,9 @@ the User class directly, avoiding circular imports between modules.
 """
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, Enum, Integer, String
+from sqlalchemy import Date, DateTime, Enum, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -47,6 +47,11 @@ class User(Base):
         nullable=False,
         index=True,
     )
+
+    # --- Profile fields (optional at registration) ---
+    full_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     is_active: Mapped[bool] = mapped_column(
         default=True,
