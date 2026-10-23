@@ -6,9 +6,11 @@ its owner (or an admin), and only while it's in DRAFT or REJECTED
 status — once submitted, it's locked until the admin acts on it.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import uuid
 
 from app.core.database import get_db
 from app.auth.dependencies import get_current_user
@@ -21,10 +23,15 @@ from app.patents.schemas import (
     PatentSubmitForVerification,
     PatentUpdate,
 )
+from app.core.validators import validate_patent_document
 
 router = APIRouter()
 
 EDITABLE_STATUSES = {PatentStatus.DRAFT, PatentStatus.REJECTED}
+
+# Directory where proof documents are stored (relative to project root)
+_UPLOAD_DIR = Path("documents") / "patents"
+_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 async def _get_owned_patent(patent_id: int, user: User, db: AsyncSession) -> Patent:
@@ -129,6 +136,60 @@ async def update_patent(
     return patent
 
 
+@router.post("/{patent_id}/upload-document", response_model=PatentOut)
+async def upload_proof_document(
+    patent_id: int,
+    file: UploadFile = File(
+        ...,
+        description="Patent proof document — PDF only, maximum 10 MB.",
+    ),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Patent:
+    """
+    Upload a PDF proof document for a patent (DRAFT or REJECTED status only).
+
+    Validation enforced server-side:
+      • Format: PDF only (Content-Type must be application/pdf).
+      • Size:   Maximum 10 MB.
+
+    The file is saved to ``documents/patents/`` with a UUID-based name to
+    prevent collisions. The ``proof_document_url`` on the patent record is
+    updated automatically — no separate submit call needed just for the URL.
+
+    After uploading, call ``POST /patents/{id}/submit`` (with the returned
+    ``proof_document_url``) to move the patent to PENDING_VERIFICATION.
+    """
+    patent = await _get_owned_patent(patent_id, user, db)
+
+    if patent.status not in EDITABLE_STATUSES:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Cannot upload a document for a patent in '{patent.status.value}' status",
+        )
+
+    # --- Read the file content first so we know the real byte count ---
+    content: bytes = await file.read()
+    content_type: str = file.content_type or ""
+
+    try:
+        validate_patent_document(content_type=content_type, size_bytes=len(content))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+    # --- Persist to disk ---
+    safe_name = f"{uuid.uuid4().hex}.pdf"
+    dest = _UPLOAD_DIR / safe_name
+    dest.write_bytes(content)
+
+    # Store a relative URL path (swap for a real CDN/storage URL in production)
+    patent.proof_document_url = f"/documents/patents/{safe_name}"
+
+    await db.commit()
+    await db.refresh(patent)
+    return patent
+
+
 @router.post("/{patent_id}/submit", response_model=PatentOut)
 async def submit_for_verification(
     patent_id: int,
@@ -136,7 +197,12 @@ async def submit_for_verification(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Patent:
-    """DRAFT/REJECTED -> PENDING_VERIFICATION. Verification track picks it up from here."""
+    """DRAFT/REJECTED -> PENDING_VERIFICATION. Verification track picks it up from here.
+
+    ``body.proof_document_url`` must be the URL of a PDF file.
+    Use ``POST /patents/{id}/upload-document`` to upload the file directly —
+    that endpoint validates format and size before saving.
+    """
     patent = await _get_owned_patent(patent_id, user, db)
 
     if patent.status not in EDITABLE_STATUSES:
@@ -152,6 +218,7 @@ async def submit_for_verification(
     await db.commit()
     await db.refresh(patent)
     return patent
+
 
 
 @router.delete("/{patent_id}", status_code=status.HTTP_204_NO_CONTENT)

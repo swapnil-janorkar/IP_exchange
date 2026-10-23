@@ -42,6 +42,16 @@ ALLOWED_DOC_MIME_TYPES: frozenset[str] = frozenset(
 # Maximum document upload size = 50 MB
 MAX_DOCUMENT_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
 
+# ---------------------------------------------------------------------------
+# Patent proof-document constraints (stricter than the general upload limits)
+# ---------------------------------------------------------------------------
+
+# Only PDF is accepted for patent proof documents (industry standard)
+ALLOWED_PATENT_DOC_MIME_TYPES: frozenset[str] = frozenset({"application/pdf"})
+
+# Patent proof documents must not exceed 10 MB
+MAX_PATENT_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+
 # Minimum age for innovators registering on the platform
 MIN_AGE_YEARS = 18
 
@@ -124,6 +134,32 @@ DocumentSizeBytes = Annotated[
     int,
     Field(gt=0, le=MAX_DOCUMENT_SIZE_BYTES, description="File size in bytes (max 50 MB)"),
 ]
+
+
+def validate_patent_document(content_type: str, size_bytes: int) -> None:
+    """
+    Validate a patent proof-document upload.
+
+    Rules (enforced at the route layer before saving):
+      - Format: PDF only (application/pdf).
+      - Size: must be > 0 and <= MAX_PATENT_DOCUMENT_SIZE_BYTES (10 MB).
+
+    Raises ValueError so callers can re-raise as HTTPException 422.
+    """
+    if content_type not in ALLOWED_PATENT_DOC_MIME_TYPES:
+        raise ValueError(
+            f"Patent proof document must be a PDF file (received '{content_type}'). "
+            "Only 'application/pdf' is accepted."
+        )
+    if size_bytes <= 0:
+        raise ValueError("Uploaded file is empty.")
+    max_mb = MAX_PATENT_DOCUMENT_SIZE_BYTES // (1024 * 1024)
+    if size_bytes > MAX_PATENT_DOCUMENT_SIZE_BYTES:
+        actual_mb = size_bytes / (1024 * 1024)
+        raise ValueError(
+            f"Patent proof document exceeds the maximum allowed size of {max_mb} MB "
+            f"(uploaded file is {actual_mb:.2f} MB). Please reduce the file size and retry."
+        )
 
 # ---------------------------------------------------------------------------
 # Age validation

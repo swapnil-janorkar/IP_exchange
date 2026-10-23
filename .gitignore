@@ -66,3 +66,6 @@ pip-log.txt
 .ipynb_checkpoints/
 *.ipynb
 
+
+# Patent proof document uploads (runtime data, not source)
+documents/patents/
