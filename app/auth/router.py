@@ -13,7 +13,7 @@ GET  /auth/me               — current user profile
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from fastapi import Request
 from app.auth.dependencies import get_current_user
 from app.auth.models import User
 from app.auth.schemas import (
@@ -47,15 +47,26 @@ router = APIRouter(
 )
 async def register(
     data: RegisterRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        return await register_user(db, data)
+        ip = request.client.host if request.client else None
+        ua = request.headers.get("user-agent")
+
+        return await register_user(
+            db,
+            data,
+            ip_address=ip,
+            user_agent=ua,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         )
+
+
 
 
 @router.post(

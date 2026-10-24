@@ -7,6 +7,7 @@ Design notes
   Only the SHA-256 hash is stored in the DB.
 * Access tokens are short-lived (30 min by default).
 * Refresh tokens are long-lived (7 days by default) and can be revoked.
+* Successful authentication actions are recorded in audit_logs.
 """
 
 import hashlib
@@ -24,6 +25,7 @@ from app.auth.security import (
     hash_password,
     verify_password,
 )
+from app.core.audit_models import AuditLog
 from app.core.config import settings
 
 
@@ -40,6 +42,32 @@ def _generate_refresh_token() -> str:
     return secrets.token_hex(32)
 
 
+def _add_audit_log(
+    db: AsyncSession,
+    *,
+    actor_id: int | None,
+    resource_type: str,
+    resource_id: int | None,
+    action: str,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+    detail: str | None = None,
+) -> None:
+    """Add an audit entry to the current transaction."""
+    db.add(
+        AuditLog(
+            actor_id=actor_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            action=action,
+            outcome="success",
+            detail=detail,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+    )
+
+
 # ---------------------------------------------------------------------------
 # Register
 # ---------------------------------------------------------------------------
@@ -48,6 +76,8 @@ def _generate_refresh_token() -> str:
 async def register_user(
     db: AsyncSession,
     data: RegisterRequest,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> User:
     # Check whether the email is already registered
     result = await db.execute(select(User).where(User.email == data.email))
@@ -64,6 +94,19 @@ async def register_user(
     )
 
     db.add(user)
+    await db.flush()  # Generate user.id without committing
+
+    _add_audit_log(
+        db,
+        actor_id=user.id,
+        resource_type="user",
+        resource_id=user.id,
+        action="register",
+        ip_address=ip_address,
+        user_agent=user_agent,
+        detail="User registered successfully",
+    )
+
     await db.commit()
     await db.refresh(user)
     return user
@@ -109,8 +152,19 @@ async def login_user(
         user_agent=user_agent,
     )
     db.add(db_refresh)
-    await db.commit()
 
+    _add_audit_log(
+        db,
+        actor_id=user.id,
+        resource_type="user",
+        resource_id=user.id,
+        action="login",
+        ip_address=ip_address,
+        user_agent=user_agent,
+        detail="User logged in successfully",
+    )
+
+    await db.commit()
     return access_token, raw_refresh
 
 
@@ -139,15 +193,16 @@ async def refresh_access_token(
     if rt.expires_at < datetime.now(timezone.utc):
         raise ValueError("Refresh token has expired")
 
+    # Load user before changing token state
+    user_result = await db.execute(select(User).where(User.id == rt.user_id))
+    user = user_result.scalar_one_or_none()
+
+    if not user or not user.is_active:
+        raise ValueError("User account not found or inactive")
+
     # Revoke old token
     rt.is_revoked = True
     await db.flush()
-
-    # Load user
-    user_result = await db.execute(select(User).where(User.id == rt.user_id))
-    user = user_result.scalar_one_or_none()
-    if not user or not user.is_active:
-        raise ValueError("User account not found or inactive")
 
     # Mint new tokens
     new_access = create_access_token(user_id=user.id, role=user.role.value)
@@ -164,8 +219,19 @@ async def refresh_access_token(
         user_agent=rt.user_agent,
     )
     db.add(new_rt)
-    await db.commit()
 
+    _add_audit_log(
+        db,
+        actor_id=user.id,
+        resource_type="user",
+        resource_id=user.id,
+        action="refresh_token",
+        ip_address=rt.ip_address,
+        user_agent=rt.user_agent,
+        detail="Refresh token rotated successfully",
+    )
+
+    await db.commit()
     return new_access, new_raw_refresh
 
 
@@ -194,6 +260,15 @@ async def change_password(
     for rt in result.scalars().all():
         rt.is_revoked = True
 
+    _add_audit_log(
+        db,
+        actor_id=user.id,
+        resource_type="user",
+        resource_id=user.id,
+        action="change_password",
+        detail="Password changed successfully; active refresh tokens revoked",
+    )
+
     await db.commit()
 
 
@@ -208,6 +283,19 @@ async def logout_user(db: AsyncSession, raw_refresh_token: str) -> None:
         select(RefreshToken).where(RefreshToken.token_hash == token_hash)
     )
     rt = result.scalar_one_or_none()
+
     if rt and not rt.is_revoked:
         rt.is_revoked = True
+
+        _add_audit_log(
+            db,
+            actor_id=rt.user_id,
+            resource_type="user",
+            resource_id=rt.user_id,
+            action="logout",
+            ip_address=rt.ip_address,
+            user_agent=rt.user_agent,
+            detail="User logged out successfully",
+        )
+
         await db.commit()
