@@ -24,7 +24,7 @@ import app.patents.models               # noqa: F401  Patent
 import app.patents.exchange_models      # noqa: F401  Document, Deal, Signature, Embedding
 import app.ipvexa.models               # noqa: F401  IPRRecord, Service, ServiceRequest, Job, WorkReport
 # -----------------------------------------------------------------------
-
+from app.documents.router import router as documents_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -71,3 +71,4 @@ from app.verification.router import router as verification_router
 app.include_router(auth_router, tags=["auth"])
 app.include_router(patents_router, prefix="/patents", tags=["patents"])
 app.include_router(verification_router, prefix="/verification", tags=["verification"])
+app.include_router(documents_router)
