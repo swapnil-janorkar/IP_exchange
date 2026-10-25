@@ -1,0 +1,124 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --color-background: hsl(222 20% 7%);
+  --color-foreground: hsl(210 40% 98%);
+  --color-card: hsl(222 18% 10%);
+  --color-card-foreground: hsl(210 40% 98%);
+  --color-primary: hsl(243 75% 65%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(222 16% 16%);
+  --color-secondary-foreground: hsl(210 40% 98%);
+  --color-muted: hsl(222 16% 14%);
+  --color-muted-foreground: hsl(215 20% 55%);
+  --color-accent: hsl(243 75% 65%);
+  --color-accent-foreground: hsl(0 0% 100%);
+  --color-destructive: hsl(0 84% 60%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-border: hsl(222 16% 18%);
+  --color-input: hsl(222 16% 16%);
+  --color-ring: hsl(243 75% 65%);
+  --radius: 0.75rem;
+}
+
+/* Base reset */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-color: hsl(222 16% 18%);
+}
+
+html {
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+body {
+  background-color: hsl(222 20% 7%);
+  color: hsl(210 40% 98%);
+}
+
+/* ========== Custom Utility Classes ========== */
+
+/* Glassmorphism card */
+.glass-card {
+  background: hsl(222 18% 10% / 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid hsl(222 16% 22% / 0.6);
+}
+
+/* Gradient glow ring (focus-within) */
+.glow-ring {
+  box-shadow:
+    0 0 0 1px hsl(243 75% 65% / 0.4),
+    0 0 16px hsl(243 75% 65% / 0.12);
+}
+
+/* Violet gradient background */
+.violet-gradient-bg {
+  background:
+    radial-gradient(ellipse 70% 50% at 50% -10%, hsl(243 75% 65% / 0.18) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 40% at 80% 90%, hsl(270 70% 55% / 0.10) 0%, transparent 60%),
+    hsl(222 20% 7%);
+}
+
+/* Text gradient */
+.text-gradient {
+  background: linear-gradient(135deg, hsl(243 75% 75%) 0%, hsl(270 70% 70%) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ========== Animations ========== */
+
+@keyframes float-up {
+  0%   { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes scale-in {
+  0%   { opacity: 0; transform: scale(0.96); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(243 75% 65% / 0.4); }
+  50%       { box-shadow: 0 0 0 8px hsl(243 75% 65% / 0); }
+}
+
+.animate-float-up {
+  animation: float-up 0.5s ease-out forwards;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out forwards;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.4s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Stagger delays for children */
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 80ms; }
+.stagger > *:nth-child(3) { animation-delay: 160ms; }
+.stagger > *:nth-child(4) { animation-delay: 240ms; }
+.stagger > *:nth-child(5) { animation-delay: 320ms; }
+.stagger > *:nth-child(6) { animation-delay: 400ms; }
+.stagger > *:nth-child(7) { animation-delay: 480ms; }
