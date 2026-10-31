@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback } from "react"
 
-export type UserRole = "innovator" | "organisation" | null
+export type UserRole = "innovator" | "organisation" | "admin" | null
 
 export interface AuthUser {
   id: number
@@ -20,7 +20,7 @@ interface AuthContextValue {
   isAuthenticated: boolean
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => void
-  setRole: (role: "innovator" | "organisation") => void
+  setRole: (role: "innovator" | "organisation" | "admin") => void
   isLoading: boolean
   error: string | null
   clearError: () => void
@@ -76,7 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const setRole = useCallback(
-    (role: "innovator" | "organisation") => {
+    (role: "innovator" | "organisation" | "admin") => {
       if (user) setUser({ ...user, role })
     },
     [user],
