@@ -18,7 +18,8 @@ export interface AuthUser {
 interface AuthContextValue {
   user: AuthUser | null
   isAuthenticated: boolean
-  signIn: (email: string, password: string) => Promise<void>
+  signIn: (email: string, password: string) => Promise<AuthUser>  // throws on failure, returns user with DB role
+  signUp: (data: { email: string; password: string; full_name: string; role: "innovator" | "organisation" }) => Promise<void> // throws on failure
   signOut: () => void
   setRole: (role: "innovator" | "organisation" | "admin") => void
   isLoading: boolean
@@ -37,7 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const clearError = useCallback(() => setError(null), [])
 
-  const signIn = useCallback(async (email: string, password: string) => {
+  const signIn = useCallback(async (email: string, password: string): Promise<AuthUser> => {
     setIsLoading(true)
     setError(null)
     try {
@@ -54,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const tokens = await res.json()
 
-      // Fetch current user profile
+      // Fetch current user profile (includes role stored in DB from sign-up)
       const profileRes = await fetch(`${API_BASE}/auth/me`, {
         headers: { Authorization: `Bearer ${tokens.access_token}` },
       })
@@ -63,13 +64,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const profile = await profileRes.json()
 
-      setUser({
+      const authUser: AuthUser = {
         ...profile,
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
-      })
+      }
+      setUser(authUser)
+      return authUser  // return so callers can read the role immediately
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.")
+      const message = err instanceof Error ? err.message : "Something went wrong."
+      setError(message)
+      throw new Error(message)
     } finally {
       setIsLoading(false)
     }
@@ -87,12 +92,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null)
   }, [])
 
+  const signUp = useCallback(async (data: {
+    email: string
+    password: string
+    full_name: string
+    role: "innovator" | "organisation"
+  }) => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`${API_BASE}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        const detail = body?.detail
+        const message =
+          typeof detail === "string"
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((d: { msg?: string }) => d.msg).join(", ")
+              : "Registration failed."
+        throw new Error(message)
+      }
+      // Registration succeeded — now log them in automatically
+      const loginRes = await fetch(`${API_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: data.email, password: data.password }),
+      })
+      if (!loginRes.ok) throw new Error("Account created! Please sign in.")
+      const tokens = await loginRes.json()
+      const profileRes = await fetch(`${API_BASE}/auth/me`, {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      })
+      if (!profileRes.ok) throw new Error("Account created! Please sign in.")
+      const profile = await profileRes.json()
+      setUser({
+        ...profile,
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Something went wrong."
+      setError(message)
+      throw new Error(message)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
   return (
     <AuthContext.Provider
       value={{
         user,
         isAuthenticated: !!user,
         signIn,
+        signUp,
         signOut,
         setRole,
         isLoading,
