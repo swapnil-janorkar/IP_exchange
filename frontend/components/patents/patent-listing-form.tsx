@@ -32,12 +32,13 @@ type Step = "details" | "document" | "review" | "success"
 
 export function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; color: string; bg: string }> = {
-    draft:                { label: "Draft",          color: "hsl(215 20% 65%)", bg: "hsl(215 20% 65%/0.12)" },
-    pending_verification: { label: "Pending Review", color: "hsl(38 92% 60%)",  bg: "hsl(38 92% 60%/0.12)"  },
-    verified:             { label: "Verified",       color: "hsl(142 71% 55%)", bg: "hsl(142 71% 55%/0.12)" },
-    listed:               { label: "Listed",         color: "hsl(243 75% 65%)", bg: "hsl(243 75% 65%/0.12)" },
-    rejected:             { label: "Rejected",       color: "hsl(0 84% 60%)",   bg: "hsl(0 84% 60%/0.12)"   },
-    sold:                 { label: "Sold",           color: "hsl(280 70% 60%)", bg: "hsl(280 70% 60%/0.12)" },
+    draft:                      { label: "Draft",           color: "hsl(215 20% 65%)", bg: "hsl(215 20% 65%/0.12)" },
+    pending_verification:       { label: "Pending Review",  color: "hsl(38 92% 60%)",  bg: "hsl(38 92% 60%/0.12)"  },
+    additional_info_requested:  { label: "Info Requested",  color: "hsl(280 70% 65%)", bg: "hsl(280 70% 65%/0.12)" },
+    verified:                   { label: "Verified",        color: "hsl(142 71% 55%)", bg: "hsl(142 71% 55%/0.12)" },
+    listed:                     { label: "Listed",          color: "hsl(243 75% 65%)", bg: "hsl(243 75% 65%/0.12)" },
+    rejected:                   { label: "Rejected",        color: "hsl(0 84% 60%)",   bg: "hsl(0 84% 60%/0.12)"   },
+    sold:                       { label: "Sold",            color: "hsl(20 80% 55%)",  bg: "hsl(20 80% 55%/0.12)"  },
   }
   const s = map[status] ?? { label: status, color: "hsl(215 20% 65%)", bg: "hsl(215 20% 65%/0.1)" }
   return (

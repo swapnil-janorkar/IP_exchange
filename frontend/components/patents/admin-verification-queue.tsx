@@ -16,6 +16,10 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
+  MessageSquare,
+  Sparkles,
+  TrendingUp,
+  CircleDot,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -24,11 +28,53 @@ import {
   approvePatent,
   rejectPatent,
   listPatent,
+  requestPatentInfo,
+  markPatentSold,
   type Patent,
 } from "@/lib/api"
 import { StatusBadge } from "./patent-listing-form"
 
-// ─── Reject Modal ────────────────────────────────────────────────────────────
+// ─── Workflow status order for display ───────────────────────────────────────
+
+const STATUS_FLOW = [
+  { key: "draft",                     label: "Draft",           color: "hsl(215 20% 55%)" },
+  { key: "pending_verification",      label: "Pending Review",  color: "hsl(38 92% 60%)"  },
+  { key: "additional_info_requested", label: "Info Requested",  color: "hsl(280 70% 65%)" },
+  { key: "verified",                  label: "Verified",        color: "hsl(142 71% 55%)" },
+  { key: "listed",                    label: "Listed",          color: "hsl(243 75% 65%)" },
+  { key: "sold",                      label: "Sold",            color: "hsl(20 80% 55%)"  },
+]
+
+// ─── Modal Base ───────────────────────────────────────────────────────────────
+
+function ModalBase({
+  onClose,
+  children,
+}: {
+  onClose: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "hsl(222 20% 7% / 0.85)", backdropFilter: "blur(8px)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl p-6 flex flex-col gap-5 animate-scale-in"
+        style={{
+          background: "hsl(222 18% 11%)",
+          border: "1px solid hsl(222 16% 22%)",
+          boxShadow: "0 24px 64px hsl(0 0% 0% / 0.5)",
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
+// ─── Reject Modal ─────────────────────────────────────────────────────────────
 
 function RejectModal({
   patent,
@@ -46,91 +92,198 @@ function RejectModal({
   const valid = reason.trim().length >= 5
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "hsl(222 20% 7% / 0.8)", backdropFilter: "blur(8px)" }}
-    >
-      <div
-        className="w-full max-w-md rounded-2xl p-6 flex flex-col gap-5 animate-scale-in"
-        style={{ background: "hsl(222 18% 11%)", border: "1px solid hsl(222 16% 22%)", boxShadow: "0 24px 64px hsl(0 0% 0% / 0.5)" }}
-      >
-        <div className="flex items-start gap-3">
-          <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "hsl(0 84% 60%/0.12)", color: "hsl(0 84% 60%)" }}>
-            <XCircle className="h-5 w-5" />
-          </div>
-          <div>
-            <h3 className="font-bold text-sm" style={{ color: "hsl(210 40% 98%)" }}>Reject Patent</h3>
-            <p className="text-xs opacity-50 mt-0.5 leading-relaxed">
-              Provide a clear reason so the innovator knows what to fix before resubmitting.
-            </p>
-          </div>
+    <ModalBase onClose={onCancel}>
+      <div className="flex items-start gap-3">
+        <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "hsl(0 84% 60%/0.12)", color: "hsl(0 84% 60%)" }}>
+          <XCircle className="h-5 w-5" />
         </div>
-
-        <div className="rounded-xl p-3 text-xs" style={{ background: "hsl(222 16% 9%)", border: "1px solid hsl(222 16% 18%)" }}>
-          <span className="opacity-40">Patent: </span>
-          <span className="font-semibold" style={{ color: "hsl(210 40% 98%)" }}>{patent.title}</span>
-          <span className="opacity-40"> (#{patent.id})</span>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <label className="text-xs font-semibold" style={{ color: "hsl(210 40% 75%)" }}>
-            Rejection Reason <span style={{ color: "hsl(0 84% 60%)" }}>*</span>
-          </label>
-          <textarea
-            id="reject-reason"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. Missing proof of filing, description too vague, duplicate submission…"
-            rows={4}
-            style={{
-              background: "hsl(222 16% 9%)",
-              border: `1px solid ${!valid && reason.length > 0 ? "hsl(0 84% 60%/0.5)" : focused ? "hsl(0 84% 60%/0.5)" : "hsl(222 16% 20%)"}`,
-              color: "hsl(210 40% 98%)",
-              borderRadius: "0.75rem",
-              padding: "0.65rem 0.875rem",
-              fontSize: "0.875rem",
-              outline: "none",
-              width: "100%",
-              resize: "vertical" as const,
-              boxShadow: focused ? "0 0 0 3px hsl(0 84% 60%/0.08)" : "none",
-              transition: "border-color 0.15s",
-            }}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-          />
-          {!valid && reason.length > 0 && (
-            <p className="text-xs" style={{ color: "hsl(0 84% 60%)" }}>Reason must be at least 5 characters.</p>
-          )}
-        </div>
-
-        <div className="flex gap-3 justify-end pt-1">
-          <Button variant="ghost" onClick={onCancel} disabled={isLoading}>Cancel</Button>
-          <Button
-            variant="destructive"
-            onClick={() => onConfirm(reason.trim())}
-            disabled={!valid || isLoading}
-          >
-            {isLoading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Rejecting…</> : <><XCircle className="h-4 w-4 mr-2" /> Reject Patent</>}
-          </Button>
+        <div>
+          <h3 className="font-bold text-sm" style={{ color: "hsl(210 40% 98%)" }}>Reject Patent</h3>
+          <p className="text-xs opacity-50 mt-0.5 leading-relaxed">
+            Provide a clear reason so the innovator knows what to fix before resubmitting.
+          </p>
         </div>
       </div>
+
+      <div className="rounded-xl p-3 text-xs" style={{ background: "hsl(222 16% 9%)", border: "1px solid hsl(222 16% 18%)" }}>
+        <span className="opacity-40">Patent: </span>
+        <span className="font-semibold" style={{ color: "hsl(210 40% 98%)" }}>{patent.title}</span>
+        <span className="opacity-40"> (#{patent.id})</span>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label className="text-xs font-semibold" style={{ color: "hsl(210 40% 75%)" }}>
+          Rejection Reason <span style={{ color: "hsl(0 84% 60%)" }}>*</span>
+        </label>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. Missing proof of filing, description too vague, duplicate submission…"
+          rows={4}
+          style={{
+            background: "hsl(222 16% 9%)",
+            border: `1px solid ${!valid && reason.length > 0 ? "hsl(0 84% 60%/0.5)" : focused ? "hsl(0 84% 60%/0.5)" : "hsl(222 16% 20%)"}`,
+            color: "hsl(210 40% 98%)",
+            borderRadius: "0.75rem",
+            padding: "0.65rem 0.875rem",
+            fontSize: "0.875rem",
+            outline: "none",
+            width: "100%",
+            resize: "vertical" as const,
+            transition: "border-color 0.15s",
+          }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+        />
+        {!valid && reason.length > 0 && (
+          <p className="text-xs" style={{ color: "hsl(0 84% 60%)" }}>Reason must be at least 5 characters.</p>
+        )}
+      </div>
+
+      <div className="flex gap-3 justify-end pt-1">
+        <Button variant="ghost" onClick={onCancel} disabled={isLoading}>Cancel</Button>
+        <Button
+          onClick={() => onConfirm(reason.trim())}
+          disabled={!valid || isLoading}
+          style={{ background: "hsl(0 84% 55%)", color: "#fff" }}
+        >
+          {isLoading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Rejecting…</> : <><XCircle className="h-4 w-4 mr-2" />Reject Patent</>}
+        </Button>
+      </div>
+    </ModalBase>
+  )
+}
+
+// ─── Request Info Modal ───────────────────────────────────────────────────────
+
+function RequestInfoModal({
+  patent,
+  onConfirm,
+  onCancel,
+  isLoading,
+}: {
+  patent: Patent
+  onConfirm: (message: string) => void
+  onCancel: () => void
+  isLoading: boolean
+}) {
+  const [message, setMessage] = useState("")
+  const [focused, setFocused] = useState(false)
+  const valid = message.trim().length >= 10
+
+  return (
+    <ModalBase onClose={onCancel}>
+      <div className="flex items-start gap-3">
+        <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "hsl(280 70% 65%/0.12)", color: "hsl(280 70% 65%)" }}>
+          <MessageSquare className="h-5 w-5" />
+        </div>
+        <div>
+          <h3 className="font-bold text-sm" style={{ color: "hsl(210 40% 98%)" }}>Request Additional Information</h3>
+          <p className="text-xs opacity-50 mt-0.5 leading-relaxed">
+            Ask the innovator to provide more information before you can approve.
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-xl p-3 text-xs" style={{ background: "hsl(222 16% 9%)", border: "1px solid hsl(222 16% 18%)" }}>
+        <span className="opacity-40">Patent: </span>
+        <span className="font-semibold" style={{ color: "hsl(210 40% 98%)" }}>{patent.title}</span>
+        <span className="opacity-40"> (#{patent.id})</span>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label className="text-xs font-semibold" style={{ color: "hsl(210 40% 75%)" }}>
+          Information Requested <span style={{ color: "hsl(0 84% 60%)" }}>*</span>
+        </label>
+        <textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="e.g. Please provide the official filing number and jurisdiction. Also attach a notarized copy of the grant certificate…"
+          rows={4}
+          style={{
+            background: "hsl(222 16% 9%)",
+            border: `1px solid ${focused ? "hsl(280 70% 65%/0.5)" : "hsl(222 16% 20%)"}`,
+            color: "hsl(210 40% 98%)",
+            borderRadius: "0.75rem",
+            padding: "0.65rem 0.875rem",
+            fontSize: "0.875rem",
+            outline: "none",
+            width: "100%",
+            resize: "vertical" as const,
+            transition: "border-color 0.15s",
+          }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+        />
+        {!valid && message.length > 0 && (
+          <p className="text-xs" style={{ color: "hsl(38 92% 60%)" }}>Message must be at least 10 characters.</p>
+        )}
+      </div>
+
+      <div className="flex gap-3 justify-end pt-1">
+        <Button variant="ghost" onClick={onCancel} disabled={isLoading}>Cancel</Button>
+        <Button
+          onClick={() => onConfirm(message.trim())}
+          disabled={!valid || isLoading}
+          style={{ background: "hsl(280 70% 55%)", color: "#fff" }}
+        >
+          {isLoading
+            ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sending…</>
+            : <><MessageSquare className="h-4 w-4 mr-2" />Send Request</>}
+        </Button>
+      </div>
+    </ModalBase>
+  )
+}
+
+// ─── Status Flow Diagram (inline) ────────────────────────────────────────────
+
+function StatusFlowDiagram({ currentStatus }: { currentStatus: string }) {
+  return (
+    <div className="flex items-center gap-1 flex-wrap mt-2">
+      {STATUS_FLOW.map((s, i) => {
+        const isActive = s.key === currentStatus
+        const isPast = STATUS_FLOW.findIndex((x) => x.key === currentStatus) > i
+        return (
+          <React.Fragment key={s.key}>
+            <div
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-all"
+              style={{
+                background: isActive ? `${s.color}22` : isPast ? "hsl(142 71% 55%/0.08)" : "transparent",
+                color: isActive ? s.color : isPast ? "hsl(142 71% 55%)" : "hsl(215 20% 40%)",
+                border: `1px solid ${isActive ? `${s.color}44` : isPast ? "hsl(142 71% 55%/0.2)" : "hsl(222 16% 20%)"}`,
+              }}
+            >
+              {isActive && <CircleDot className="h-3 w-3" />}
+              {s.label}
+            </div>
+            {i < STATUS_FLOW.length - 1 && (
+              <span className="text-xs opacity-20">→</span>
+            )}
+          </React.Fragment>
+        )
+      })}
     </div>
   )
 }
 
-// ─── Patent Queue Card ───────────────────────────────────────────────────────
+// ─── Patent Queue Card ────────────────────────────────────────────────────────
 
 function PatentQueueCard({
   patent,
   onApprove,
   onReject,
   onList,
+  onRequestInfo,
+  onMarkSold,
   actionLoading,
 }: {
   patent: Patent
   onApprove: () => void
   onReject: () => void
   onList: () => void
+  onRequestInfo: () => void
+  onMarkSold: () => void
   actionLoading: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -139,19 +292,20 @@ function PatentQueueCard({
   })
   const isVerified = patent.status === "verified"
   const isPending = patent.status === "pending_verification"
+  const isInfoRequested = patent.status === "additional_info_requested"
+  const isListed = patent.status === "listed"
 
   return (
     <div
       className="rounded-2xl transition-all duration-200"
       style={{
         background: "hsl(222 18% 10%)",
-        border: `1px solid ${expanded ? "hsl(222 16% 26%)" : "hsl(222 16% 18%)"}`,
+        border: `1px solid ${expanded ? "hsl(222 16% 26%)" : isInfoRequested ? "hsl(280 70% 65%/0.3)" : "hsl(222 16% 18%)"}`,
         boxShadow: expanded ? "0 8px 32px hsl(0 0% 0%/0.3)" : "none",
       }}
     >
-      {/* Card Header */}
+      {/* Header */}
       <div className="p-5 flex items-start gap-4">
-        {/* Icon */}
         <div
           className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: "hsl(243 75% 65%/0.1)", color: "hsl(243 75% 65%)" }}
@@ -159,15 +313,14 @@ function PatentQueueCard({
           <FileText className="h-5 w-5" />
         </div>
 
-        {/* Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div className="min-w-0">
               <p className="font-bold text-sm truncate" style={{ color: "hsl(210 40% 98%)" }}>{patent.title}</p>
-              <div className="flex items-center gap-2 mt-0.5">
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                 <span className="text-xs opacity-40 font-mono">#{patent.id}</span>
                 <span className="opacity-20">·</span>
-                <span className="text-xs opacity-40">Submitted {submittedAt}</span>
+                <span className="text-xs opacity-40">Updated {submittedAt}</span>
                 <span className="opacity-20">·</span>
                 <span className="text-xs opacity-40">Owner #{patent.owner_id}</span>
               </div>
@@ -175,7 +328,6 @@ function PatentQueueCard({
             <StatusBadge status={patent.status} />
           </div>
 
-          {/* Keywords */}
           {patent.keywords && (
             <div className="flex flex-wrap gap-1 mt-2">
               {patent.keywords.split(",").filter(Boolean).slice(0, 4).map((kw, i) => (
@@ -190,27 +342,29 @@ function PatentQueueCard({
           )}
         </div>
 
-        {/* Expand toggle */}
         <button
           onClick={() => setExpanded((v) => !v)}
           className="opacity-40 hover:opacity-70 transition-opacity shrink-0"
-          aria-label={expanded ? "Collapse" : "Expand"}
         >
           {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
       </div>
 
-      {/* Expanded Details */}
+      {/* Expanded details */}
       {expanded && (
-        <div
-          className="px-5 pb-5 flex flex-col gap-4 animate-fade-in"
-          style={{ borderTop: "1px solid hsl(222 16% 16%)" }}
-        >
+        <div className="px-5 pb-5 flex flex-col gap-4 animate-fade-in" style={{ borderTop: "1px solid hsl(222 16% 16%)" }}>
+          {/* Status flow diagram */}
           <div className="pt-4">
+            <p className="text-xs uppercase tracking-wider opacity-40 mb-2">Status Workflow</p>
+            <StatusFlowDiagram currentStatus={patent.status} />
+          </div>
+
+          <div>
             <p className="text-xs uppercase tracking-wider opacity-40 mb-2">Description</p>
             <p className="text-sm opacity-70 leading-relaxed">{patent.description}</p>
           </div>
 
+          {/* Proof document */}
           {patent.proof_document_url ? (
             <div className="flex items-center gap-2.5 rounded-xl px-3.5 py-2.5" style={{ background: "hsl(142 71% 55%/0.06)", border: "1px solid hsl(142 71% 55%/0.2)" }}>
               <FileText className="h-4 w-4 shrink-0" style={{ color: "hsl(142 71% 55%)" }} />
@@ -232,10 +386,29 @@ function PatentQueueCard({
             </div>
           )}
 
+          {/* Info request message */}
+          {isInfoRequested && patent.rejection_reason && (
+            <div className="flex flex-col gap-2 rounded-xl p-4" style={{ background: "hsl(280 70% 65%/0.06)", border: "1px solid hsl(280 70% 65%/0.25)" }}>
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-3.5 w-3.5" style={{ color: "hsl(280 70% 65%)" }} />
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(280 70% 65%)" }}>
+                  Info Requested from Innovator
+                </span>
+              </div>
+              <p className="text-xs opacity-70 leading-relaxed">{patent.rejection_reason}</p>
+            </div>
+          )}
+
+          {/* AI Summary */}
           {patent.ai_summary && (
-            <div>
-              <p className="text-xs uppercase tracking-wider opacity-40 mb-2">AI Summary</p>
-              <p className="text-xs opacity-60 leading-relaxed italic">{patent.ai_summary}</p>
+            <div className="flex flex-col gap-2 rounded-xl p-4" style={{ background: "hsl(243 75% 65%/0.06)", border: "1px solid hsl(243 75% 65%/0.2)" }}>
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-3.5 w-3.5" style={{ color: "hsl(243 75% 70%)" }} />
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(243 75% 70%)" }}>
+                  AI-Generated Summary
+                </span>
+              </div>
+              <p className="text-xs opacity-70 leading-relaxed italic">{patent.ai_summary}</p>
             </div>
           )}
         </div>
@@ -243,10 +416,9 @@ function PatentQueueCard({
 
       {/* Actions */}
       <div
-        className="px-5 py-4 flex items-center gap-3 flex-wrap"
+        className="px-5 py-4 flex items-center gap-2 flex-wrap"
         style={{ borderTop: "1px solid hsl(222 16% 14%)" }}
       >
-        {/* View details shortcut */}
         <button
           onClick={() => setExpanded((v) => !v)}
           className="flex items-center gap-1.5 text-xs font-semibold opacity-40 hover:opacity-70 transition-opacity"
@@ -257,6 +429,7 @@ function PatentQueueCard({
 
         <div className="flex-1" />
 
+        {/* PENDING_VERIFICATION actions */}
         {isPending && (
           <>
             <Button
@@ -264,7 +437,41 @@ function PatentQueueCard({
               size="sm"
               onClick={onReject}
               disabled={actionLoading}
-              className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:border-destructive/50"
+              className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+            >
+              <XCircle className="h-4 w-4 mr-1.5" />
+              Reject
+            </Button>
+            <Button
+              size="sm"
+              onClick={onRequestInfo}
+              disabled={actionLoading}
+              style={{ background: "hsl(280 70% 55%)", color: "#fff" }}
+            >
+              <MessageSquare className="h-4 w-4 mr-1.5" />
+              Request Info
+            </Button>
+            <Button
+              size="sm"
+              onClick={onApprove}
+              disabled={actionLoading}
+              style={{ background: "hsl(142 71% 45%)", color: "#fff", boxShadow: "0 4px 16px hsl(142 71% 45%/0.3)" }}
+            >
+              {actionLoading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1.5" />}
+              Approve
+            </Button>
+          </>
+        )}
+
+        {/* ADDITIONAL_INFO_REQUESTED — can still approve or reject */}
+        {isInfoRequested && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onReject}
+              disabled={actionLoading}
+              className="border-red-500/30 text-red-400 hover:bg-red-500/10"
             >
               <XCircle className="h-4 w-4 mr-1.5" />
               Reject
@@ -273,25 +480,37 @@ function PatentQueueCard({
               size="sm"
               onClick={onApprove}
               disabled={actionLoading}
-              style={{ background: "hsl(142 71% 45%)", color: "#fff", boxShadow: "0 4px 16px hsl(142 71% 45%/0.3)" }}
-              className="hover:opacity-90"
+              style={{ background: "hsl(142 71% 45%)", color: "#fff" }}
             >
               {actionLoading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1.5" />}
-              Approve
+              Approve Anyway
             </Button>
           </>
         )}
 
+        {/* VERIFIED — publish to marketplace */}
         {isVerified && (
           <Button
             size="sm"
             onClick={onList}
             disabled={actionLoading}
             style={{ background: "hsl(243 75% 65%)", color: "#fff", boxShadow: "0 4px 16px hsl(243 75% 65%/0.3)" }}
-            className="hover:opacity-90"
           >
             {actionLoading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <List className="h-4 w-4 mr-1.5" />}
             Publish to Marketplace
+          </Button>
+        )}
+
+        {/* LISTED — mark as sold */}
+        {isListed && (
+          <Button
+            size="sm"
+            onClick={onMarkSold}
+            disabled={actionLoading}
+            style={{ background: "hsl(20 80% 50%)", color: "#fff", boxShadow: "0 4px 16px hsl(20 80% 50%/0.3)" }}
+          >
+            {actionLoading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <TrendingUp className="h-4 w-4 mr-1.5" />}
+            Mark as Sold
           </Button>
         )}
       </div>
@@ -299,26 +518,25 @@ function PatentQueueCard({
   )
 }
 
-// ─── Stats Bar ───────────────────────────────────────────────────────────────
+// ─── Stats Bar ────────────────────────────────────────────────────────────────
 
 function StatsBar({ patents }: { patents: Patent[] }) {
   const pending = patents.filter((p) => p.status === "pending_verification").length
+  const infoReq = patents.filter((p) => p.status === "additional_info_requested").length
   const verified = patents.filter((p) => p.status === "verified").length
+  const listed = patents.filter((p) => p.status === "listed").length
 
   const stats = [
-    { label: "In Queue", value: pending, color: "hsl(38 92% 60%)", icon: <ClipboardList className="h-4 w-4" /> },
-    { label: "Verified", value: verified, color: "hsl(142 71% 55%)", icon: <CheckCircle2 className="h-4 w-4" /> },
-    { label: "Total Shown", value: patents.length, color: "hsl(243 75% 65%)", icon: <Shield className="h-4 w-4" /> },
+    { label: "Pending Review", value: pending,  color: "hsl(38 92% 60%)",  icon: <ClipboardList className="h-4 w-4" /> },
+    { label: "Info Requested", value: infoReq,  color: "hsl(280 70% 65%)", icon: <MessageSquare  className="h-4 w-4" /> },
+    { label: "Verified",       value: verified, color: "hsl(142 71% 55%)", icon: <CheckCircle2   className="h-4 w-4" /> },
+    { label: "Listed",         value: listed,   color: "hsl(243 75% 65%)", icon: <Shield         className="h-4 w-4" /> },
   ]
 
   return (
-    <div className="grid grid-cols-3 gap-3 mb-6">
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
       {stats.map((s) => (
-        <div
-          key={s.label}
-          className="rounded-2xl p-4 flex flex-col gap-2"
-          style={{ background: "hsl(222 18% 10%)", border: "1px solid hsl(222 16% 18%)" }}
-        >
+        <div key={s.label} className="rounded-2xl p-4 flex flex-col gap-2" style={{ background: "hsl(222 18% 10%)", border: "1px solid hsl(222 16% 18%)" }}>
           <div className="flex items-center gap-2" style={{ color: s.color }}>
             {s.icon}
             <span className="text-xs font-semibold uppercase tracking-wider opacity-70">{s.label}</span>
@@ -330,7 +548,9 @@ function StatsBar({ patents }: { patents: Patent[] }) {
   )
 }
 
-// ─── Main Component ──────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+type FilterTab = "all" | "pending_verification" | "additional_info_requested" | "verified" | "listed"
 
 interface AdminVerificationQueueProps {
   token: string
@@ -342,12 +562,13 @@ export default function AdminVerificationQueue({ token }: AdminVerificationQueue
   const [error, setError] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<number | null>(null)
   const [rejectTarget, setRejectTarget] = useState<Patent | null>(null)
-  const [filter, setFilter] = useState<"all" | "pending_verification" | "verified">("all")
+  const [infoTarget, setInfoTarget] = useState<Patent | null>(null)
+  const [filter, setFilter] = useState<FilterTab>("all")
 
   const loadQueue = useCallback(async () => {
     setIsLoading(true); setError(null)
     try {
-      const queue = await getVerificationQueue(token, 50, 0)
+      const queue = await getVerificationQueue(token, 100, 0)
       setPatents(queue)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load verification queue.")
@@ -370,11 +591,23 @@ export default function AdminVerificationQueue({ token }: AdminVerificationQueue
     if (!rejectTarget) return
     setActionLoading(rejectTarget.id)
     try {
-      await rejectPatent(rejectTarget.id, reason, token)
-      setPatents((prev) => prev.filter((p) => p.id !== rejectTarget.id))
+      const updated = await rejectPatent(rejectTarget.id, reason, token)
+      setPatents((prev) => prev.filter((p) => p.id !== updated.id))
       setRejectTarget(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Rejection failed.")
+    } finally { setActionLoading(null) }
+  }
+
+  const handleRequestInfoConfirm = async (message: string) => {
+    if (!infoTarget) return
+    setActionLoading(infoTarget.id)
+    try {
+      const updated = await requestPatentInfo(infoTarget.id, message, token)
+      setPatents((prev) => prev.map((p) => (p.id === infoTarget.id ? updated : p)))
+      setInfoTarget(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send info request.")
     } finally { setActionLoading(null) }
   }
 
@@ -382,14 +615,42 @@ export default function AdminVerificationQueue({ token }: AdminVerificationQueue
     setActionLoading(patent.id)
     try {
       const updated = await listPatent(patent.id, token)
-      setPatents((prev) => prev.filter((p) => p.id !== patent.id))
-      void updated
+      setPatents((prev) => prev.map((p) => (p.id === patent.id ? updated : p)))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to publish patent.")
     } finally { setActionLoading(null) }
   }
 
+  const handleMarkSold = async (patent: Patent) => {
+    setActionLoading(patent.id)
+    try {
+      const updated = await markPatentSold(patent.id, token)
+      setPatents((prev) => prev.map((p) => (p.id === patent.id ? updated : p)))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to mark as sold.")
+    } finally { setActionLoading(null) }
+  }
+
+  const FILTER_TABS: { key: FilterTab; label: string }[] = [
+    { key: "all",                       label: "All" },
+    { key: "pending_verification",      label: "Pending" },
+    { key: "additional_info_requested", label: "Info Requested" },
+    { key: "verified",                  label: "Verified → Publish" },
+    { key: "listed",                    label: "Listed → Sold" },
+  ]
+
   const filtered = filter === "all" ? patents : patents.filter((p) => p.status === filter)
+
+  const badgeCount = (key: FilterTab) =>
+    key === "all" ? patents.length : patents.filter((p) => p.status === key).length
+
+  const badgeColor: Record<FilterTab, string> = {
+    all:                       "hsl(243 75% 65%)",
+    pending_verification:      "hsl(38 92% 60%)",
+    additional_info_requested: "hsl(280 70% 65%)",
+    verified:                  "hsl(142 71% 55%)",
+    listed:                    "hsl(243 75% 65%)",
+  }
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-8">
@@ -403,7 +664,7 @@ export default function AdminVerificationQueue({ token }: AdminVerificationQueue
             <h1 className="text-xl font-black tracking-tight" style={{ color: "hsl(210 40% 98%)" }}>
               Verification Queue
             </h1>
-            <p className="text-sm opacity-50">Review and approve patent submissions — FIFO order</p>
+            <p className="text-sm opacity-50">Review, approve, and manage patent submissions</p>
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={loadQueue} disabled={isLoading}>
@@ -425,29 +686,28 @@ export default function AdminVerificationQueue({ token }: AdminVerificationQueue
 
       {/* Filter tabs */}
       {!isLoading && patents.length > 0 && (
-        <div className="flex gap-2 mb-5">
-          {(["all", "pending_verification", "verified"] as const).map((f) => {
-            const labels: Record<string, string> = {
-              all: "All",
-              pending_verification: "Pending Review",
-              verified: "Verified → Publish",
-            }
-            const active = filter === f
+        <div className="flex gap-2 mb-5 flex-wrap">
+          {FILTER_TABS.map((tab) => {
+            const active = filter === tab.key
+            const count = badgeCount(tab.key)
             return (
               <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200"
+                key={tab.key}
+                onClick={() => setFilter(tab.key)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center gap-1.5"
                 style={{
                   background: active ? "hsl(243 75% 65%/0.15)" : "transparent",
                   color: active ? "hsl(243 75% 75%)" : "hsl(215 20% 50%)",
                   border: `1px solid ${active ? "hsl(243 75% 65%/0.4)" : "hsl(222 16% 20%)"}`,
                 }}
               >
-                {labels[f]}
-                {f === "pending_verification" && (
-                  <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-xs" style={{ background: "hsl(38 92% 60%/0.2)", color: "hsl(38 92% 60%)" }}>
-                    {patents.filter((p) => p.status === "pending_verification").length}
+                {tab.label}
+                {count > 0 && (
+                  <span
+                    className="px-1.5 py-0.5 rounded-full text-xs"
+                    style={{ background: `${badgeColor[tab.key]}22`, color: badgeColor[tab.key] }}
+                  >
+                    {count}
                   </span>
                 )}
               </button>
@@ -475,12 +735,12 @@ export default function AdminVerificationQueue({ token }: AdminVerificationQueue
             </div>
             <div>
               <p className="font-bold text-base" style={{ color: "hsl(210 40% 98%)" }}>
-                {patents.length === 0 ? "Queue is empty" : "No patents match filter"}
+                {patents.length === 0 ? "Queue is empty" : "No patents match this filter"}
               </p>
               <p className="text-sm opacity-40 mt-1">
                 {patents.length === 0
                   ? "No patents are awaiting review right now."
-                  : `Try switching to a different filter tab.`}
+                  : "Try switching to a different filter tab."}
               </p>
             </div>
           </CardContent>
@@ -497,6 +757,8 @@ export default function AdminVerificationQueue({ token }: AdminVerificationQueue
                 onApprove={() => handleApprove(patent)}
                 onReject={() => setRejectTarget(patent)}
                 onList={() => handleList(patent)}
+                onRequestInfo={() => setInfoTarget(patent)}
+                onMarkSold={() => handleMarkSold(patent)}
                 actionLoading={actionLoading === patent.id}
               />
             </div>
@@ -517,21 +779,37 @@ export default function AdminVerificationQueue({ token }: AdminVerificationQueue
             <span className="font-semibold" style={{ color: "hsl(142 71% 55%)" }}>Verified</span>
             <span>→ Publish →</span>
             <span className="font-semibold" style={{ color: "hsl(243 75% 65%)" }}>Listed</span>
-            <span className="opacity-40 mx-2">|</span>
-            <span>Pending Review → Reject →</span>
+            <span>→ Mark Sold →</span>
+            <span className="font-semibold" style={{ color: "hsl(20 80% 55%)" }}>Sold</span>
+            <span className="opacity-30 mx-1">|</span>
+            <span>Pending → Request Info →</span>
+            <span className="font-semibold" style={{ color: "hsl(280 70% 65%)" }}>Info Requested</span>
+            <span className="opacity-30 mx-1">|</span>
+            <span>Pending → Reject →</span>
             <span className="font-semibold" style={{ color: "hsl(0 84% 60%)" }}>Rejected</span>
-            <span className="opacity-40">(owner can fix &amp; resubmit)</span>
           </div>
+          <p className="text-xs opacity-30 flex items-center gap-1.5">
+            <Sparkles className="h-3 w-3" />
+            AI summary + embedding generated automatically on approval
+          </p>
         </div>
       )}
 
-      {/* Reject modal */}
+      {/* Modals */}
       {rejectTarget && (
         <RejectModal
           patent={rejectTarget}
           onConfirm={handleRejectConfirm}
           onCancel={() => setRejectTarget(null)}
           isLoading={actionLoading === rejectTarget.id}
+        />
+      )}
+      {infoTarget && (
+        <RequestInfoModal
+          patent={infoTarget}
+          onConfirm={handleRequestInfoConfirm}
+          onCancel={() => setInfoTarget(null)}
+          isLoading={actionLoading === infoTarget.id}
         />
       )}
     </div>

@@ -15,6 +15,7 @@ export type PatentStatus =
   | "listed"
   | "sold"
   | "rejected"
+  | "additional_info_requested"
 
 export interface Patent {
   id: number
@@ -155,3 +156,15 @@ export const rejectPatent = (id: number, reason: string, token: string) =>
 /** Move a VERIFIED patent to LISTED */
 export const listPatent = (id: number, token: string) =>
   request<Patent>(`/verification/${id}/list`, { method: "POST", token })
+
+/** Request additional information from the applicant (PENDING_VERIFICATION → ADDITIONAL_INFO_REQUESTED) */
+export const requestPatentInfo = (id: number, message: string, token: string) =>
+  request<Patent>(`/verification/${id}/request-info`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
+    token,
+  })
+
+/** Mark a LISTED patent as SOLD */
+export const markPatentSold = (id: number, token: string) =>
+  request<Patent>(`/verification/${id}/mark-sold`, { method: "POST", token })

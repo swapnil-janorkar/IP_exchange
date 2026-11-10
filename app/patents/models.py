@@ -31,6 +31,7 @@ class PatentStatus(str, enum.Enum):
 
     DRAFT = "draft"                            # owner is still editing, not submitted
     PENDING_VERIFICATION = "pending_verification"  # submitted, waiting on admin review
+    ADDITIONAL_INFO_REQUESTED = "additional_info_requested"  # admin requested more info
     VERIFIED = "verified"                       # admin approved, not yet publicly listed
     LISTED = "listed"                           # publicly searchable
     SOLD = "sold"                                # deal closed, removed from search

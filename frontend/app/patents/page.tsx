@@ -68,7 +68,19 @@ function PatentCard({ patent }: { patent: Patent }) {
         </div>
       )}
 
-      {patent.rejection_reason && (
+      {patent.status === "additional_info_requested" && patent.rejection_reason && (
+        <div
+          className="flex items-start gap-2 rounded-xl px-3 py-2"
+          style={{ background: "hsl(280 70% 65%/0.08)", border: "1px solid hsl(280 70% 65%/0.2)" }}
+        >
+          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" style={{ color: "hsl(280 70% 65%)" }} />
+          <p className="text-xs" style={{ color: "hsl(280 70% 65%)" }}>
+            <strong>Admin requested info: </strong>{patent.rejection_reason}
+          </p>
+        </div>
+      )}
+
+      {patent.status === "rejected" && patent.rejection_reason && (
         <div
           className="flex items-start gap-2 rounded-xl px-3 py-2"
           style={{ background: "hsl(0 84% 60%/0.08)", border: "1px solid hsl(0 84% 60%/0.2)" }}
@@ -77,6 +89,15 @@ function PatentCard({ patent }: { patent: Patent }) {
           <p className="text-xs" style={{ color: "hsl(0 84% 60%)" }}>
             <strong>Rejected: </strong>{patent.rejection_reason}
           </p>
+        </div>
+      )}
+
+      {patent.ai_summary && (
+        <div
+          className="flex items-start gap-2 rounded-xl px-3 py-2"
+          style={{ background: "hsl(243 75% 65%/0.06)", border: "1px solid hsl(243 75% 65%/0.15)" }}
+        >
+          <p className="text-xs opacity-60 italic leading-relaxed">{patent.ai_summary}</p>
         </div>
       )}
     </div>
