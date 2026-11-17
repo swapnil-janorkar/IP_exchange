@@ -1,78 +1,203 @@
 "use client"
 
-import React, { useState, useEffect, useCallback } from "react"
-import { Plus, Lightbulb, Loader2, AlertCircle, FileText, Calendar, RefreshCw } from "lucide-react"
+import React, { useState, useEffect, useCallback, useRef } from "react"
+import {
+  Plus, Lightbulb, Loader2, AlertCircle, FileText, Calendar,
+  RefreshCw, ChevronDown, ChevronUp, ExternalLink, Sparkles,
+  FilePlus2, Trash2, Upload, CheckCircle2, X,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { useAuth } from "@/contexts/auth-context"
 import PatentListingForm, { StatusBadge } from "@/components/patents/patent-listing-form"
-import { getMyPatents, type Patent } from "@/lib/api"
+import {
+  getMyPatents, getPatentDocuments, uploadDocument, deletePatentDocument,
+  submitPatent, type Patent, type PatentDocument,
+} from "@/lib/api"
 
-// ─── Patent Card (my patents list) ──────────────────────────────────────────
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
-function PatentCard({ patent }: { patent: Patent }) {
+// â”€â”€â”€ Document list sub-component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function PatentDocumentList({
+  patent,
+  token,
+  onDocumentChange,
+}: {
+  patent: Patent
+  token: string
+  onDocumentChange: () => void
+}) {
+  const [docs, setDocs] = useState<PatentDocument[]>([])
+  const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const canEdit = patent.status === "draft" || patent.status === "rejected" || patent.status === "additional_info_requested"
+
+  const loadDocs = useCallback(async () => {
+    setLoading(true)
+    try {
+      const list = await getPatentDocuments(patent.id, token)
+      setDocs(list)
+    } catch {
+      // silent
+    } finally {
+      setLoading(false)
+    }
+  }, [patent.id, token])
+
+  useEffect(() => { loadDocs() }, [loadDocs])
+
+  const handleUpload = async (file: File) => {
+    if (file.type !== "application/pdf") { setUploadError("Only PDF files are accepted."); return }
+    if (file.size > 10 * 1024 * 1024) { setUploadError("File must be under 10 MB."); return }
+    setUploadError(null); setUploading(true)
+    try {
+      await uploadDocument(patent.id, file, token)
+      await loadDocs()
+      onDocumentChange()
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed.")
+    } finally { setUploading(false) }
+  }
+
+  const handleDelete = async (docId: number) => {
+    try {
+      await deletePatentDocument(patent.id, docId, token)
+      await loadDocs()
+      onDocumentChange()
+    } catch { /* silent */ }
+  }
+
+  if (loading) return <div className="flex items-center gap-2 py-2 opacity-40"><Loader2 className="h-3.5 w-3.5 animate-spin" /><span className="text-xs">Loading documentsâ€¦</span></div>
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs uppercase tracking-wider opacity-40 font-semibold">Proof Documents ({docs.length})</p>
+        {canEdit && docs.length < 5 && (
+          <button
+            className="flex items-center gap-1 text-xs font-semibold opacity-60 hover:opacity-100 transition-opacity"
+            style={{ color: "hsl(243 75% 65%)" }}
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <FilePlus2 className="h-3 w-3" />}
+            Add PDF
+          </button>
+        )}
+        <input ref={fileRef} type="file" accept="application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = "" }} />
+      </div>
+
+      {uploadError && <p className="text-xs" style={{ color: "hsl(0 84% 60%)" }}>{uploadError}</p>}
+
+      {docs.length === 0 ? (
+        <p className="text-xs opacity-30">No documents attached yet.</p>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {docs.map((doc) => (
+            <div key={doc.id} className="flex items-center gap-2 rounded-xl px-3 py-2" style={{ background: "hsl(222 16% 9%)", border: "1px solid hsl(222 16% 18%)" }}>
+              <FileText className="h-3.5 w-3.5 shrink-0 opacity-50" />
+              <span className="text-xs flex-1 truncate opacity-70">{doc.file_name}</span>
+              <span className="text-xs opacity-30">{(doc.size_bytes / (1024 * 1024)).toFixed(1)} MB</span>
+              <a
+                href={`${API_BASE}${doc.storage_url}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="opacity-40 hover:opacity-70 transition-opacity"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+              {canEdit && (
+                <button className="opacity-30 hover:opacity-70 transition-opacity" onClick={() => handleDelete(doc.id)}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// â”€â”€â”€ Patent Card (my patents list) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function PatentCard({ patent, token, onRefresh }: { patent: Patent; token: string; onRefresh: () => void }) {
+  const [expanded, setExpanded] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const createdAt = new Date(patent.created_at).toLocaleDateString("en-US", {
     day: "numeric", month: "short", year: "numeric",
   })
   const keywordList = patent.keywords.split(",").filter(Boolean)
+  const canResubmit = patent.status === "rejected" || patent.status === "additional_info_requested"
+
+  const handleResubmit = async () => {
+    if (!patent.proof_document_url) {
+      setSubmitError("Please attach a proof document before resubmitting.")
+      return
+    }
+    setSubmitting(true); setSubmitError(null)
+    try {
+      await submitPatent(patent.id, token)
+      onRefresh()
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Resubmission failed.")
+    } finally { setSubmitting(false) }
+  }
 
   return (
     <div
-      className="rounded-2xl p-5 flex flex-col gap-3 transition-all duration-200 hover:border-opacity-60"
+      className="rounded-2xl transition-all duration-200"
       style={{
         background: "hsl(222 18% 10%)",
-        border: "1px solid hsl(222 16% 18%)",
+        border: `1px solid ${expanded ? "hsl(222 16% 24%)" : patent.status === "additional_info_requested" ? "hsl(280 70% 65%/0.3)" : patent.status === "rejected" ? "hsl(0 84% 60%/0.2)" : "hsl(222 16% 18%)"}`,
+        boxShadow: expanded ? "0 8px 32px hsl(0 0% 0%/0.2)" : "none",
       }}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <div
-            className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0"
-            style={{ background: "hsl(243 75% 65%/0.1)", color: "hsl(243 75% 65%)" }}
-          >
-            <FileText className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="font-bold text-sm truncate" style={{ color: "hsl(210 40% 98%)" }}>
-              {patent.title}
-            </p>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-xs opacity-40 font-mono">#{patent.id}</span>
-              <span className="opacity-20">·</span>
-              <span className="flex items-center gap-1 text-xs opacity-40">
-                <Calendar className="h-3 w-3" />
-                {createdAt}
-              </span>
-            </div>
-          </div>
+      {/* Header */}
+      <div className="p-5 flex items-start gap-3">
+        <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: "hsl(243 75% 65%/0.1)", color: "hsl(243 75% 65%)" }}>
+          <FileText className="h-4 w-4" />
         </div>
-        <StatusBadge status={patent.status} />
-      </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-bold text-sm truncate" style={{ color: "hsl(210 40% 98%)" }}>{patent.title}</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-xs opacity-40 font-mono">#{patent.id}</span>
+                <span className="opacity-20">Â·</span>
+                <span className="flex items-center gap-1 text-xs opacity-40">
+                  <Calendar className="h-3 w-3" />
+                  {createdAt}
+                </span>
+              </div>
+            </div>
+            <StatusBadge status={patent.status} />
+          </div>
 
-      <p className="text-xs opacity-50 leading-relaxed line-clamp-2">{patent.description}</p>
-
-      {keywordList.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {keywordList.slice(0, 4).map((kw, i) => (
-            <span
-              key={i}
-              className="px-2 py-0.5 rounded-full text-xs"
-              style={{ background: "hsl(243 75% 65%/0.08)", color: "hsl(243 75% 70%)", border: "1px solid hsl(243 75% 65%/0.15)" }}
-            >
-              {kw.trim()}
-            </span>
-          ))}
-          {keywordList.length > 4 && (
-            <span className="text-xs opacity-30 self-center">+{keywordList.length - 4}</span>
+          {keywordList.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {keywordList.slice(0, 4).map((kw, i) => (
+                <span key={i} className="px-2 py-0.5 rounded-full text-xs" style={{ background: "hsl(243 75% 65%/0.08)", color: "hsl(243 75% 70%)", border: "1px solid hsl(243 75% 65%/0.15)" }}>
+                  {kw.trim()}
+                </span>
+              ))}
+              {keywordList.length > 4 && <span className="text-xs opacity-30 self-center">+{keywordList.length - 4}</span>}
+            </div>
           )}
         </div>
-      )}
 
+        <button onClick={() => setExpanded((v) => !v)} className="opacity-40 hover:opacity-70 transition-opacity shrink-0 mt-0.5">
+          {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
+      </div>
+
+      {/* Banners */}
       {patent.status === "additional_info_requested" && patent.rejection_reason && (
-        <div
-          className="flex items-start gap-2 rounded-xl px-3 py-2"
-          style={{ background: "hsl(280 70% 65%/0.08)", border: "1px solid hsl(280 70% 65%/0.2)" }}
-        >
+        <div className="mx-5 mb-3 flex items-start gap-2 rounded-xl px-3 py-2" style={{ background: "hsl(280 70% 65%/0.08)", border: "1px solid hsl(280 70% 65%/0.2)" }}>
           <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" style={{ color: "hsl(280 70% 65%)" }} />
           <p className="text-xs" style={{ color: "hsl(280 70% 65%)" }}>
             <strong>Admin requested info: </strong>{patent.rejection_reason}
@@ -81,11 +206,8 @@ function PatentCard({ patent }: { patent: Patent }) {
       )}
 
       {patent.status === "rejected" && patent.rejection_reason && (
-        <div
-          className="flex items-start gap-2 rounded-xl px-3 py-2"
-          style={{ background: "hsl(0 84% 60%/0.08)", border: "1px solid hsl(0 84% 60%/0.2)" }}
-        >
-          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" style={{ color: "hsl(0 84% 60%)" }} />
+        <div className="mx-5 mb-3 flex items-start gap-2 rounded-xl px-3 py-2" style={{ background: "hsl(0 84% 60%/0.08)", border: "1px solid hsl(0 84% 60%/0.2)" }}>
+          <X className="h-3.5 w-3.5 mt-0.5 shrink-0" style={{ color: "hsl(0 84% 60%)" }} />
           <p className="text-xs" style={{ color: "hsl(0 84% 60%)" }}>
             <strong>Rejected: </strong>{patent.rejection_reason}
           </p>
@@ -93,18 +215,50 @@ function PatentCard({ patent }: { patent: Patent }) {
       )}
 
       {patent.ai_summary && (
-        <div
-          className="flex items-start gap-2 rounded-xl px-3 py-2"
-          style={{ background: "hsl(243 75% 65%/0.06)", border: "1px solid hsl(243 75% 65%/0.15)" }}
-        >
+        <div className="mx-5 mb-3 flex items-start gap-2 rounded-xl px-3 py-2" style={{ background: "hsl(243 75% 65%/0.06)", border: "1px solid hsl(243 75% 65%/0.15)" }}>
+          <Sparkles className="h-3.5 w-3.5 mt-0.5 shrink-0" style={{ color: "hsl(243 75% 70%)" }} />
           <p className="text-xs opacity-60 italic leading-relaxed">{patent.ai_summary}</p>
+        </div>
+      )}
+
+      {/* Expanded details */}
+      {expanded && (
+        <div className="px-5 pb-5 flex flex-col gap-4 animate-fade-in" style={{ borderTop: "1px solid hsl(222 16% 15%)" }}>
+          <div className="pt-4">
+            <p className="text-xs uppercase tracking-wider opacity-40 mb-2">Description</p>
+            <p className="text-sm opacity-60 leading-relaxed">{patent.description}</p>
+          </div>
+          <PatentDocumentList patent={patent} token={token} onDocumentChange={onRefresh} />
+        </div>
+      )}
+
+      {/* Resubmit action */}
+      {canResubmit && (
+        <div className="px-5 pb-5 flex flex-col gap-2" style={{ borderTop: "1px solid hsl(222 16% 15%)" }}>
+          <div className="pt-4 flex items-center gap-3">
+            <p className="text-xs opacity-50 flex-1">
+              {patent.status === "additional_info_requested"
+                ? "Add more documents or update info, then resubmit for admin review."
+                : "Edit and resubmit this rejected patent for admin review."
+              }
+            </p>
+            <Button
+              size="sm"
+              onClick={handleResubmit}
+              disabled={submitting}
+              style={{ background: "hsl(243 75% 65%)", color: "#fff" }}
+            >
+              {submitting ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Submittingâ€¦</> : <><Upload className="h-3.5 w-3.5 mr-1.5" />Resubmit</>}
+            </Button>
+          </div>
+          {submitError && <p className="text-xs" style={{ color: "hsl(0 84% 60%)" }}>{submitError}</p>}
         </div>
       )}
     </div>
   )
 }
 
-// ─── Main Page ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ Main Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function PatentsPage() {
   const { user, isAuthenticated } = useAuth()
@@ -157,7 +311,7 @@ export default function PatentsPage() {
       <div className="min-h-screen violet-gradient-bg py-8">
         <PatentListingForm
           token={user.access_token}
-          onSuccess={(patent) => {
+          onSuccess={() => {
             setShowForm(false)
             loadPatents()
           }}
@@ -165,6 +319,17 @@ export default function PatentsPage() {
         />
       </div>
     )
+  }
+
+  // Status summary
+  const statusCounts = {
+    draft: patents.filter((p) => p.status === "draft").length,
+    pending: patents.filter((p) => p.status === "pending_verification").length,
+    info: patents.filter((p) => p.status === "additional_info_requested").length,
+    verified: patents.filter((p) => p.status === "verified").length,
+    listed: patents.filter((p) => p.status === "listed").length,
+    sold: patents.filter((p) => p.status === "sold").length,
+    rejected: patents.filter((p) => p.status === "rejected").length,
   }
 
   // Patent dashboard
@@ -195,6 +360,26 @@ export default function PatentsPage() {
           </div>
         </div>
 
+        {/* Status summary bar */}
+        {!isLoading && patents.length > 0 && (
+          <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 mb-6 animate-float-up">
+            {[
+              { label: "Draft", value: statusCounts.draft, color: "hsl(215 20% 55%)" },
+              { label: "Pending", value: statusCounts.pending, color: "hsl(38 92% 60%)" },
+              { label: "Info Req.", value: statusCounts.info, color: "hsl(280 70% 65%)" },
+              { label: "Verified", value: statusCounts.verified, color: "hsl(142 71% 55%)" },
+              { label: "Listed", value: statusCounts.listed, color: "hsl(243 75% 65%)" },
+              { label: "Sold", value: statusCounts.sold, color: "hsl(20 80% 55%)" },
+              { label: "Rejected", value: statusCounts.rejected, color: "hsl(0 84% 60%)" },
+            ].map((s) => (
+              <div key={s.label} className="rounded-xl p-2.5 text-center" style={{ background: "hsl(222 18% 10%)", border: "1px solid hsl(222 16% 18%)" }}>
+                <p className="text-lg font-black" style={{ color: s.color }}>{s.value}</p>
+                <p className="text-xs opacity-40">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Error */}
         {error && (
           <div className="flex items-start gap-2.5 rounded-xl px-4 py-3 mb-5" style={{ background: "hsl(0 84% 60%/0.1)", border: "1px solid hsl(0 84% 60%/0.3)" }}>
@@ -208,7 +393,7 @@ export default function PatentsPage() {
           <div className="flex items-center justify-center py-20">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="h-8 w-8 animate-spin" style={{ color: "hsl(243 75% 65%)" }} />
-              <p className="text-sm opacity-40">Loading your patents…</p>
+              <p className="text-sm opacity-40">Loading your patentsâ€¦</p>
             </div>
           </div>
         )}
@@ -244,7 +429,7 @@ export default function PatentsPage() {
           <div className="flex flex-col gap-4 stagger">
             {patents.map((patent) => (
               <div key={patent.id} className="animate-float-up opacity-0">
-                <PatentCard patent={patent} />
+                <PatentCard patent={patent} token={user.access_token} onRefresh={loadPatents} />
               </div>
             ))}
           </div>

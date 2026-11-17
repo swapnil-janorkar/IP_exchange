@@ -31,6 +31,16 @@ export interface Patent {
   updated_at: string
 }
 
+export interface PatentDocument {
+  id: number
+  file_name: string
+  storage_url: string
+  mime_type: string
+  size_bytes: number
+  doc_type: string
+  created_at: string
+}
+
 export interface PatentCreate {
   title: string
   description: string
@@ -101,7 +111,7 @@ export const updatePatent = (id: number, body: PatentUpdate, token: string) =>
     token,
   })
 
-/** Upload a PDF proof document */
+/** Upload a PDF proof document (can be called multiple times for multi-doc support) */
 export const uploadDocument = (id: number, file: File, token: string) => {
   const form = new FormData()
   form.append("file", file)
@@ -112,15 +122,30 @@ export const uploadDocument = (id: number, file: File, token: string) => {
   })
 }
 
+/** Get all documents attached to a patent */
+export const getPatentDocuments = (id: number, token: string) =>
+  request<PatentDocument[]>(`/patents/${id}/documents`, { token })
+
+/** Delete a specific document from a patent (DRAFT or REJECTED only) */
+export const deletePatentDocument = (
+  patentId: number,
+  docId: number,
+  token: string
+) =>
+  request<void>(`/patents/${patentId}/documents/${docId}`, {
+    method: "DELETE",
+    token,
+  })
+
 /** Submit patent for admin verification */
 export const submitPatent = (
   id: number,
-  proof_document_url: string,
-  token: string
+  token: string,
+  proof_document_url?: string
 ) =>
   request<Patent>(`/patents/${id}/submit`, {
     method: "POST",
-    body: JSON.stringify({ proof_document_url }),
+    body: JSON.stringify({ proof_document_url: proof_document_url ?? null }),
     token,
   })
 
@@ -141,11 +166,11 @@ export const getVerificationQueue = (
     { token }
   )
 
-/** Approve a patent (PENDING_VERIFICATION → VERIFIED) */
+/** Approve a patent (PENDING_VERIFICATION or ADDITIONAL_INFO_REQUESTED → VERIFIED) */
 export const approvePatent = (id: number, token: string) =>
   request<Patent>(`/verification/${id}/approve`, { method: "POST", token })
 
-/** Reject a patent (PENDING_VERIFICATION → REJECTED) */
+/** Reject a patent (PENDING_VERIFICATION or ADDITIONAL_INFO_REQUESTED → REJECTED) */
 export const rejectPatent = (id: number, reason: string, token: string) =>
   request<Patent>(`/verification/${id}/reject`, {
     method: "POST",
@@ -168,3 +193,4 @@ export const requestPatentInfo = (id: number, message: string, token: string) =>
 /** Mark a LISTED patent as SOLD */
 export const markPatentSold = (id: number, token: string) =>
   request<Patent>(`/verification/${id}/mark-sold`, { method: "POST", token })
+

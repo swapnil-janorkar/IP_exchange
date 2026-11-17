@@ -16,6 +16,7 @@ from app.core.database import get_db
 from app.auth.dependencies import get_current_user
 from app.auth.models import User
 from app.patents.models import Patent, PatentStatus
+from app.patents.exchange_models import Document, DocumentType
 from app.patents.schemas import (
     PatentCreate,
     PatentOut,
@@ -148,6 +149,7 @@ async def upload_proof_document(
 ) -> Patent:
     """
     Upload a PDF proof document for a patent (DRAFT or REJECTED status only).
+    Multiple calls allowed — each PDF is stored and tracked in the documents table.
 
     Validation enforced server-side:
       • Format: PDF only (Content-Type must be application/pdf).
@@ -155,10 +157,8 @@ async def upload_proof_document(
 
     The file is saved to ``documents/patents/`` with a UUID-based name to
     prevent collisions. The ``proof_document_url`` on the patent record is
-    updated automatically — no separate submit call needed just for the URL.
-
-    After uploading, call ``POST /patents/{id}/submit`` (with the returned
-    ``proof_document_url``) to move the patent to PENDING_VERIFICATION.
+    updated to the latest upload. Additional documents are stored in the
+    documents table for full multi-document support.
     """
     patent = await _get_owned_patent(patent_id, user, db)
 
@@ -171,6 +171,7 @@ async def upload_proof_document(
     # --- Read the file content first so we know the real byte count ---
     content: bytes = await file.read()
     content_type: str = file.content_type or ""
+    original_filename: str = file.filename or "document.pdf"
 
     try:
         validate_patent_document(content_type=content_type, size_bytes=len(content))
@@ -182,12 +183,101 @@ async def upload_proof_document(
     dest = _UPLOAD_DIR / safe_name
     dest.write_bytes(content)
 
-    # Store a relative URL path (swap for a real CDN/storage URL in production)
-    patent.proof_document_url = f"/documents/patents/{safe_name}"
+    storage_url = f"/documents/patents/{safe_name}"
+
+    # --- Update patent's main proof_document_url (backward compat) ---
+    patent.proof_document_url = storage_url
+
+    # --- Also record in the documents table (multi-doc support) ---
+    doc = Document(
+        owner_id=user.id,
+        patent_id=patent.id,
+        doc_type=DocumentType.PATENT_PROOF,
+        file_name=original_filename,
+        storage_url=storage_url,
+        mime_type="application/pdf",
+        size_bytes=len(content),
+    )
+    db.add(doc)
 
     await db.commit()
     await db.refresh(patent)
     return patent
+
+
+@router.get("/{patent_id}/documents")
+async def list_patent_documents(
+    patent_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """
+    List all documents attached to a patent (owner or admin only).
+    Returns all PDF proof documents uploaded for this patent.
+    """
+    # Check ownership/admin access
+    await _get_owned_patent(patent_id, user, db)
+
+    result = await db.execute(
+        select(Document)
+        .where(Document.patent_id == patent_id)
+        .order_by(Document.created_at.asc())
+    )
+    docs = result.scalars().all()
+
+    return [
+        {
+            "id": d.id,
+            "file_name": d.file_name,
+            "storage_url": d.storage_url,
+            "mime_type": d.mime_type,
+            "size_bytes": d.size_bytes,
+            "doc_type": d.doc_type.value,
+            "created_at": d.created_at.isoformat(),
+        }
+        for d in docs
+    ]
+
+
+@router.delete("/{patent_id}/documents/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_patent_document(
+    patent_id: int,
+    doc_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a specific document from a patent (DRAFT or REJECTED only)."""
+    patent = await _get_owned_patent(patent_id, user, db)
+
+    if patent.status not in EDITABLE_STATUSES:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Cannot delete a document while patent is in '{patent.status.value}' status",
+        )
+
+    doc = await db.get(Document, doc_id)
+    if doc is None or doc.patent_id != patent_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+
+    # Remove from disk if it exists
+    if doc.storage_url:
+        file_path = Path(".") / doc.storage_url.lstrip("/")
+        file_path.unlink(missing_ok=True)
+
+    # If this was the main proof_document_url, clear it or set to previous doc
+    await db.delete(doc)
+    await db.flush()
+
+    # Recalculate proof_document_url from remaining docs
+    remaining = await db.execute(
+        select(Document)
+        .where(Document.patent_id == patent_id)
+        .order_by(Document.created_at.desc())
+    )
+    latest = remaining.scalars().first()
+    patent.proof_document_url = latest.storage_url if latest else None
+
+    await db.commit()
 
 
 @router.post("/{patent_id}/submit", response_model=PatentOut)
@@ -199,9 +289,9 @@ async def submit_for_verification(
 ) -> Patent:
     """DRAFT/REJECTED -> PENDING_VERIFICATION. Verification track picks it up from here.
 
-    ``body.proof_document_url`` must be the URL of a PDF file.
-    Use ``POST /patents/{id}/upload-document`` to upload the file directly —
-    that endpoint validates format and size before saving.
+    If body.proof_document_url is provided it updates the stored URL.
+    If omitted the patent's existing proof_document_url (from upload-document)
+    is used. At least one must be present — otherwise the submit is blocked.
     """
     patent = await _get_owned_patent(patent_id, user, db)
 
@@ -211,7 +301,17 @@ async def submit_for_verification(
             f"Cannot submit a patent in '{patent.status.value}' status",
         )
 
-    patent.proof_document_url = body.proof_document_url
+    # If a URL was supplied use it; otherwise keep the existing one.
+    if body.proof_document_url:
+        patent.proof_document_url = body.proof_document_url
+
+    # Require at least one proof document on file.
+    if not patent.proof_document_url:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "A proof document is required. Upload one first via POST /patents/{id}/upload-document.",
+        )
+
     patent.status = PatentStatus.PENDING_VERIFICATION
     patent.rejection_reason = None
 

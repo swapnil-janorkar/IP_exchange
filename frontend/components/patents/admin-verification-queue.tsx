@@ -20,19 +20,24 @@ import {
   Sparkles,
   TrendingUp,
   CircleDot,
+  Download,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
   getVerificationQueue,
+  getPatentDocuments,
   approvePatent,
   rejectPatent,
   listPatent,
   requestPatentInfo,
   markPatentSold,
   type Patent,
+  type PatentDocument,
 } from "@/lib/api"
 import { StatusBadge } from "./patent-listing-form"
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 // ─── Workflow status order for display ───────────────────────────────────────
 
@@ -269,8 +274,53 @@ function StatusFlowDiagram({ currentStatus }: { currentStatus: string }) {
 
 // ─── Patent Queue Card ────────────────────────────────────────────────────────
 
+function PatentDocumentList({ patent, token }: { patent: Patent; token: string }) {
+  const [docs, setDocs] = useState<PatentDocument[]>([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    getPatentDocuments(patent.id, token)
+      .then(setDocs)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [patent.id, token])
+
+  if (loading) return <div className="flex items-center gap-2 py-1 opacity-40"><Loader2 className="h-3.5 w-3.5 animate-spin" /><span className="text-xs">Loading documents…</span></div>
+  if (docs.length === 0) {
+    return (
+      <div className="flex items-center gap-2.5 rounded-xl px-3.5 py-2.5" style={{ background: "hsl(38 92% 60%/0.06)", border: "1px solid hsl(38 92% 60%/0.2)" }}>
+        <AlertCircle className="h-4 w-4 shrink-0" style={{ color: "hsl(38 92% 60%)" }} />
+        <span className="text-xs font-medium" style={{ color: "hsl(38 92% 60%)" }}>No proof documents provided</span>
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="text-xs uppercase tracking-wider opacity-40 font-semibold">Proof Documents ({docs.length})</p>
+      {docs.map((doc) => (
+        <div key={doc.id} className="flex items-center gap-2.5 rounded-xl px-3.5 py-2.5" style={{ background: "hsl(142 71% 55%/0.06)", border: "1px solid hsl(142 71% 55%/0.2)" }}>
+          <FileText className="h-4 w-4 shrink-0" style={{ color: "hsl(142 71% 55%)" }} />
+          <span className="text-xs font-medium flex-1 truncate" style={{ color: "hsl(142 71% 55%)" }}>{doc.file_name}</span>
+          <span className="text-xs opacity-40">{(doc.size_bytes / (1024 * 1024)).toFixed(1)} MB</span>
+          <a
+            href={`${API_BASE}${doc.storage_url}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-xs font-semibold transition-opacity hover:opacity-70"
+            style={{ color: "hsl(142 71% 55%)" }}
+          >
+            View <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function PatentQueueCard({
   patent,
+  token,
   onApprove,
   onReject,
   onList,
@@ -279,6 +329,7 @@ function PatentQueueCard({
   actionLoading,
 }: {
   patent: Patent
+  token: string
   onApprove: () => void
   onReject: () => void
   onList: () => void
@@ -364,27 +415,8 @@ function PatentQueueCard({
             <p className="text-sm opacity-70 leading-relaxed">{patent.description}</p>
           </div>
 
-          {/* Proof document */}
-          {patent.proof_document_url ? (
-            <div className="flex items-center gap-2.5 rounded-xl px-3.5 py-2.5" style={{ background: "hsl(142 71% 55%/0.06)", border: "1px solid hsl(142 71% 55%/0.2)" }}>
-              <FileText className="h-4 w-4 shrink-0" style={{ color: "hsl(142 71% 55%)" }} />
-              <span className="text-xs font-medium flex-1" style={{ color: "hsl(142 71% 55%)" }}>Proof document attached</span>
-              <a
-                href={`http://localhost:8000${patent.proof_document_url}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-xs font-semibold transition-opacity hover:opacity-70"
-                style={{ color: "hsl(142 71% 55%)" }}
-              >
-                View <ExternalLink className="h-3 w-3" />
-              </a>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2.5 rounded-xl px-3.5 py-2.5" style={{ background: "hsl(38 92% 60%/0.06)", border: "1px solid hsl(38 92% 60%/0.2)" }}>
-              <AlertCircle className="h-4 w-4 shrink-0" style={{ color: "hsl(38 92% 60%)" }} />
-              <span className="text-xs font-medium" style={{ color: "hsl(38 92% 60%)" }}>No proof document provided</span>
-            </div>
-          )}
+          {/* Proof documents (multi-doc support) */}
+          <PatentDocumentList patent={patent} token={token} />
 
           {/* Info request message */}
           {isInfoRequested && patent.rejection_reason && (
@@ -754,6 +786,7 @@ export default function AdminVerificationQueue({ token }: AdminVerificationQueue
             <div key={patent.id} className="animate-float-up opacity-0">
               <PatentQueueCard
                 patent={patent}
+                token={token}
                 onApprove={() => handleApprove(patent)}
                 onReject={() => setRejectTarget(patent)}
                 onList={() => handleList(patent)}

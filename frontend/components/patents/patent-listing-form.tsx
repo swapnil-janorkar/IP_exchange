@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import React, { useState, useRef, useCallback } from "react"
 import {
@@ -13,12 +13,14 @@ import {
   X,
   FilePlus2,
   FileText,
+  Trash2,
+  Plus,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { createPatent, uploadDocument, submitPatent, type Patent } from "@/lib/api"
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface PatentListingFormProps {
   token: string
@@ -28,7 +30,19 @@ interface PatentListingFormProps {
 
 type Step = "details" | "document" | "review" | "success"
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+interface UploadedFile {
+  file: File
+  uploaded: boolean
+  error?: string
+}
+
+interface UploadedFile {
+  file: File
+  uploaded: boolean
+  error?: string
+}
+
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; color: string; bg: string }> = {
@@ -52,11 +66,11 @@ export function StatusBadge({ status }: { status: string }) {
   )
 }
 
-// ─── Step Indicator ──────────────────────────────────────────────────────────
+// â”€â”€â”€ Step Indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const STEPS: { key: Step; label: string; icon: React.ReactNode }[] = [
   { key: "details",  label: "Patent Details", icon: <ClipboardList className="h-4 w-4" /> },
-  { key: "document", label: "Proof Document", icon: <FilePlus2 className="h-4 w-4" /> },
+  { key: "document", label: "Proof Documents", icon: <FilePlus2 className="h-4 w-4" /> },
   { key: "review",   label: "Review & Submit", icon: <CheckCircle2 className="h-4 w-4" /> },
 ]
 
@@ -157,6 +171,9 @@ function StyledTextarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>
 
 // ─── Main Form ───────────────────────────────────────────────────────────────
 
+const MAX_FILES = 5
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
+
 export default function PatentListingForm({ token, onSuccess, onCancel }: PatentListingFormProps) {
   const [step, setStep] = useState<Step>("details")
   const [isLoading, setIsLoading] = useState(false)
@@ -168,9 +185,10 @@ export default function PatentListingForm({ token, onSuccess, onCancel }: Patent
   const [keywords, setKeywords] = useState("")
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
-  // Step 2
-  const [file, setFile] = useState<File | null>(null)
+  // Step 2 — multiple files
+  const [files, setFiles] = useState<UploadedFile[]>([])
   const [dragOver, setDragOver] = useState(false)
+  const [uploadingIdx, setUploadingIdx] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [patent, setPatent] = useState<Patent | null>(null)
@@ -186,6 +204,35 @@ export default function PatentListingForm({ token, onSuccess, onCancel }: Patent
     return Object.keys(errs).length === 0
   }
 
+  // ─── File selection helpers
+
+  const validateFile = (f: File): string | null => {
+    if (f.type !== "application/pdf") return "Only PDF files are accepted."
+    if (f.size > MAX_FILE_SIZE) return "File must be under 10 MB."
+    return null
+  }
+
+  const addFiles = useCallback((incoming: FileList | File[]) => {
+    setError(null)
+    const arr = Array.from(incoming)
+    setFiles((prev) => {
+      const remaining = MAX_FILES - prev.length
+      if (remaining <= 0) {
+        setError(`Maximum ${MAX_FILES} documents allowed.`)
+        return prev
+      }
+      const toAdd = arr.slice(0, remaining).map((f) => {
+        const err = validateFile(f)
+        return { file: f, uploaded: false, error: err ?? undefined }
+      })
+      return [...prev, ...toAdd]
+    })
+  }, [])
+
+  const removeFile = (idx: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== idx))
+  }
+
   // ─── Handlers
 
   const handleDetailsNext = async () => {
@@ -199,23 +246,35 @@ export default function PatentListingForm({ token, onSuccess, onCancel }: Patent
     } finally { setIsLoading(false) }
   }
 
-  const handleFileSelect = useCallback((selected: File | null) => {
-    setError(null)
-    if (!selected) return
-    if (selected.type !== "application/pdf") { setError("Only PDF files are accepted."); return }
-    if (selected.size > 10 * 1024 * 1024) { setError("File must be under 10 MB."); return }
-    setFile(selected)
-  }, [])
+  const handleUploadAll = async () => {
+    if (!patent) return
+    const validFiles = files.filter((f) => !f.error)
+    if (validFiles.length === 0) {
+      setError("Please add at least one valid PDF file.")
+      return
+    }
 
-  const handleDocumentUpload = async () => {
-    if (!patent || !file) return
     setIsLoading(true); setError(null)
-    try {
-      const updated = await uploadDocument(patent.id, file, token)
-      setPatent(updated); setStep("review")
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed.")
-    } finally { setIsLoading(false) }
+    let lastPatent = patent
+
+    for (let i = 0; i < files.length; i++) {
+      const item = files[i]
+      if (item.error || item.uploaded) continue
+      setUploadingIdx(i)
+      try {
+        const updated = await uploadDocument(lastPatent.id, item.file, token)
+        lastPatent = updated
+        setFiles((prev) => prev.map((f, idx) => idx === i ? { ...f, uploaded: true } : f))
+        setPatent(updated)
+      } catch (err) {
+        setFiles((prev) => prev.map((f, idx) => idx === i ? { ...f, error: err instanceof Error ? err.message : "Upload failed" } : f))
+      }
+    }
+
+    setUploadingIdx(null)
+    setIsLoading(false)
+    setPatent(lastPatent)
+    setStep("review")
   }
 
   const handleSubmit = async () => {
@@ -223,12 +282,16 @@ export default function PatentListingForm({ token, onSuccess, onCancel }: Patent
     if (!patent.proof_document_url) { setError("A proof document is required before submitting."); return }
     setIsLoading(true); setError(null)
     try {
-      const submitted = await submitPatent(patent.id, patent.proof_document_url, token)
+      const submitted = await submitPatent(patent.id, token)
       setPatent(submitted); setStep("success"); onSuccess?.(submitted)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submission failed.")
     } finally { setIsLoading(false) }
   }
+
+  const uploadedCount = files.filter((f) => f.uploaded).length
+  const hasValidFiles = files.some((f) => !f.error)
+  const allUploaded = files.length > 0 && files.every((f) => f.uploaded || !!f.error)
 
   // ─── Render
 
@@ -345,60 +408,96 @@ export default function PatentListingForm({ token, onSuccess, onCancel }: Patent
         </Card>
       )}
 
-      {/* ── STEP 2: Document */}
+      {/* ── STEP 2: Documents (multi-upload) */}
       {step === "document" && (
         <Card className="glass-card border-0 animate-float-up">
           <CardContent className="p-7 flex flex-col gap-6">
             <div>
-              <h2 className="text-base font-bold mb-1" style={{ color: "hsl(210 40% 98%)" }}>Upload Proof Document</h2>
-              <p className="text-sm opacity-50">Attach a PDF proving patent ownership — e.g. a grant certificate or provisional filing. Max 10 MB.</p>
+              <h2 className="text-base font-bold mb-1" style={{ color: "hsl(210 40% 98%)" }}>Upload Proof Documents</h2>
+              <p className="text-sm opacity-50">
+                Attach up to {MAX_FILES} PDFs proving patent ownership — e.g. grant certificates, provisional filings, or assignment documents. Max 10 MB each.
+              </p>
             </div>
 
+            {/* Dropzone */}
             <div
               id="document-dropzone"
-              className="rounded-2xl flex flex-col items-center justify-center gap-4 py-10 px-6 text-center cursor-pointer transition-all duration-200"
+              className="rounded-2xl flex flex-col items-center justify-center gap-4 py-8 px-6 text-center cursor-pointer transition-all duration-200"
               style={{
-                border: `2px dashed ${dragOver ? "hsl(243 75% 65%)" : file ? "hsl(142 71% 55%)" : "hsl(222 16% 24%)"}`,
-                background: dragOver ? "hsl(243 75% 65%/0.06)" : file ? "hsl(142 71% 55%/0.05)" : "hsl(222 16% 9%)",
+                border: `2px dashed ${dragOver ? "hsl(243 75% 65%)" : files.length >= MAX_FILES ? "hsl(222 16% 20%)" : "hsl(222 16% 24%)"}`,
+                background: dragOver ? "hsl(243 75% 65%/0.06)" : "hsl(222 16% 9%)",
+                opacity: files.length >= MAX_FILES ? 0.5 : 1,
+                pointerEvents: files.length >= MAX_FILES ? "none" : "auto",
               }}
               onClick={() => fileInputRef.current?.click()}
               onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
               onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFileSelect(e.dataTransfer.files[0] ?? null) }}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files) }}
             >
-              <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={(e) => handleFileSelect(e.target.files?.[0] ?? null)} />
-              {file ? (
-                <>
-                  <div className="h-14 w-14 rounded-2xl flex items-center justify-center" style={{ background: "hsl(142 71% 55%/0.15)", color: "hsl(142 71% 55%)" }}>
-                    <CheckCircle2 className="h-7 w-7" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-sm" style={{ color: "hsl(210 40% 98%)" }}>{file.name}</p>
-                    <p className="text-xs opacity-50 mt-0.5">{(file.size / (1024 * 1024)).toFixed(2)} MB · PDF</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="text-xs font-semibold transition-opacity hover:opacity-70"
-                    style={{ color: "hsl(243 75% 65%)" }}
-                    onClick={(e) => { e.stopPropagation(); setFile(null) }}
-                  >
-                    Remove file
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div className="h-14 w-14 rounded-2xl flex items-center justify-center" style={{ background: "hsl(243 75% 65%/0.1)", color: "hsl(243 75% 65%)" }}>
-                    <FilePlus2 className="h-7 w-7" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm" style={{ color: "hsl(210 40% 98%)" }}>
-                      Drop your PDF here or <span style={{ color: "hsl(243 75% 65%)" }}>browse</span>
-                    </p>
-                    <p className="text-xs opacity-40 mt-1">PDF only · max 10 MB</p>
-                  </div>
-                </>
-              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf"
+                multiple
+                className="hidden"
+                onChange={(e) => { if (e.target.files) { addFiles(e.target.files); e.target.value = "" } }}
+              />
+              <div className="h-12 w-12 rounded-2xl flex items-center justify-center" style={{ background: "hsl(243 75% 65%/0.1)", color: "hsl(243 75% 65%)" }}>
+                <Plus className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="font-semibold text-sm" style={{ color: "hsl(210 40% 98%)" }}>
+                  Drop PDFs here or <span style={{ color: "hsl(243 75% 65%)" }}>browse</span>
+                </p>
+                <p className="text-xs opacity-40 mt-1">PDF only · max 10 MB per file · up to {MAX_FILES} files</p>
+              </div>
             </div>
+
+            {/* File list */}
+            {files.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <p className="text-xs uppercase tracking-wider opacity-40 font-semibold">
+                  Selected Documents ({files.length}/{MAX_FILES})
+                </p>
+                {files.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 transition-all"
+                    style={{
+                      background: item.error ? "hsl(0 84% 60%/0.06)" : item.uploaded ? "hsl(142 71% 55%/0.06)" : "hsl(222 16% 10%)",
+                      border: `1px solid ${item.error ? "hsl(0 84% 60%/0.25)" : item.uploaded ? "hsl(142 71% 55%/0.25)" : "hsl(222 16% 20%)"}`,
+                    }}
+                  >
+                    {uploadingIdx === idx ? (
+                      <Loader2 className="h-4 w-4 animate-spin shrink-0" style={{ color: "hsl(243 75% 65%)" }} />
+                    ) : item.uploaded ? (
+                      <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "hsl(142 71% 55%)" }} />
+                    ) : item.error ? (
+                      <AlertCircle className="h-4 w-4 shrink-0" style={{ color: "hsl(0 84% 60%)" }} />
+                    ) : (
+                      <FileText className="h-4 w-4 shrink-0 opacity-50" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold truncate" style={{ color: item.error ? "hsl(0 84% 60%)" : "hsl(210 40% 90%)" }}>
+                        {item.file.name}
+                      </p>
+                      <p className="text-xs opacity-40">
+                        {item.error ? item.error : item.uploaded ? "Uploaded ✓" : `${(item.file.size / (1024 * 1024)).toFixed(2)} MB`}
+                      </p>
+                    </div>
+                    {!item.uploaded && (
+                      <button
+                        type="button"
+                        onClick={() => removeFile(idx)}
+                        className="opacity-30 hover:opacity-70 transition-opacity shrink-0"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="flex justify-between pt-2">
               <Button variant="outline" onClick={() => setStep("details")} disabled={isLoading}>
@@ -406,9 +505,19 @@ export default function PatentListingForm({ token, onSuccess, onCancel }: Patent
               </Button>
               <div className="flex gap-3">
                 <Button variant="ghost" onClick={() => setStep("review")} disabled={isLoading}>Skip for now</Button>
-                <Button onClick={handleDocumentUpload} disabled={!file || isLoading} size="lg">
-                  {isLoading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Uploading…</> : <>Upload & Continue <ArrowRight className="h-4 w-4 ml-2" /></>}
+                <Button onClick={handleUploadAll} disabled={!hasValidFiles || isLoading || allUploaded} size="lg">
+                  {isLoading
+                    ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Uploading {uploadingIdx !== null ? uploadingIdx + 1 : ""}…</>
+                    : allUploaded
+                    ? <>Continue <ArrowRight className="h-4 w-4 ml-2" /></>
+                    : <>Upload & Continue <ArrowRight className="h-4 w-4 ml-2" /></>
+                  }
                 </Button>
+                {allUploaded && (
+                  <Button onClick={() => setStep("review")} size="lg">
+                    Continue <ArrowRight className="h-4 w-4 ml-2" />
+                  </Button>
+                )}
               </div>
             </div>
           </CardContent>
@@ -452,12 +561,22 @@ export default function PatentListingForm({ token, onSuccess, onCancel }: Patent
                   </div>
                 </div>
               )}
-              <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 opacity-40" />
-                {patent.proof_document_url
-                  ? <span className="text-xs" style={{ color: "hsl(142 71% 55%)" }}>✓ Proof document attached</span>
-                  : <span className="text-xs opacity-40">No proof document — admin may request one</span>
-                }
+              <div>
+                <p className="text-xs uppercase tracking-wider opacity-40 mb-2">Proof Documents</p>
+                {uploadedCount > 0 ? (
+                  <div className="flex flex-col gap-1.5">
+                    {files.filter((f) => f.uploaded).map((f, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "hsl(142 71% 55%)" }} />
+                        <span className="text-xs" style={{ color: "hsl(142 71% 55%)" }}>{f.file.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : patent.proof_document_url ? (
+                  <span className="text-xs" style={{ color: "hsl(142 71% 55%)" }}>✓ Proof document attached</span>
+                ) : (
+                  <span className="text-xs opacity-40">No proof document — admin may request one</span>
+                )}
               </div>
             </div>
 
@@ -503,6 +622,9 @@ export default function PatentListingForm({ token, onSuccess, onCancel }: Patent
             <p className="text-xs uppercase tracking-wider opacity-40 mb-1">Submitted Patent</p>
             <p className="font-semibold text-sm mb-2">{patent.title}</p>
             <StatusBadge status={patent.status} />
+            {uploadedCount > 0 && (
+              <p className="text-xs opacity-40 mt-2">{uploadedCount} proof document{uploadedCount > 1 ? "s" : ""} attached</p>
+            )}
           </div>
           <Button size="lg" onClick={() => onSuccess?.(patent)}>View My Patents</Button>
         </div>

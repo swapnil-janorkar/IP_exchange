@@ -64,6 +64,7 @@ async def verification_queue(
                 PatentStatus.PENDING_VERIFICATION,
                 PatentStatus.ADDITIONAL_INFO_REQUESTED,
                 PatentStatus.VERIFIED,
+                PatentStatus.LISTED,
             ])
         )
         .order_by(Patent.created_at.asc())
@@ -71,6 +72,26 @@ async def verification_queue(
         .offset(offset)
     )
     return list(result.scalars().all())
+
+
+_APPROVABLE_STATUSES = {
+    PatentStatus.PENDING_VERIFICATION,
+    PatentStatus.ADDITIONAL_INFO_REQUESTED,
+}
+
+_REJECTABLE_STATUSES = {
+    PatentStatus.PENDING_VERIFICATION,
+    PatentStatus.ADDITIONAL_INFO_REQUESTED,
+}
+
+
+def _require_one_of(patent: Patent, allowed: set) -> None:
+    if patent.status not in allowed:
+        status_list = ", ".join(f"'{s.value}'" for s in allowed)
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Patent is in '{patent.status.value}' status. Expected one of: {status_list}",
+        )
 
 
 @router.post("/{patent_id}/approve", response_model=PatentOut)
@@ -81,7 +102,7 @@ async def approve_patent(
     db: AsyncSession = Depends(get_db),
 ) -> Patent:
     patent = await _get_patent_or_404(patent_id, db)
-    _require_status(patent, PatentStatus.PENDING_VERIFICATION)
+    _require_one_of(patent, _APPROVABLE_STATUSES)
 
     patent.status = PatentStatus.VERIFIED
     patent.rejection_reason = None
@@ -103,7 +124,7 @@ async def reject_patent(
     db: AsyncSession = Depends(get_db),
 ) -> Patent:
     patent = await _get_patent_or_404(patent_id, db)
-    _require_status(patent, PatentStatus.PENDING_VERIFICATION)
+    _require_one_of(patent, _REJECTABLE_STATUSES)
 
     patent.status = PatentStatus.REJECTED
     patent.rejection_reason = body.reason
