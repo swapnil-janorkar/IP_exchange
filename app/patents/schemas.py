@@ -11,7 +11,6 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.patents.models import PatentStatus
-from app.core.validators import validate_url
 
 
 class PatentCreate(BaseModel):
@@ -38,27 +37,14 @@ class PatentUpdate(BaseModel):
 class PatentSubmitForVerification(BaseModel):
     """Body for POST /patents/{id}/submit — moves DRAFT -> PENDING_VERIFICATION.
 
-    The proof_document_url must:
-      - Be a valid HTTP/HTTPS URL.
-      - Point to a PDF file (URL must end with '.pdf').
-
-    Prefer using POST /patents/{id}/upload-document to upload the file
-    directly — that endpoint also enforces the 10 MB size limit server-side.
+    proof_document_url is optional — if omitted the patent's existing
+    proof_document_url (from a prior upload-document call) is used.
+    If provided it may be a relative path like /documents/patents/xxx.pdf
+    or a full HTTP/HTTPS URL — no strict URL-format validation applied
+    so that locally-stored files can be referenced by their storage path.
     """
 
-    proof_document_url: str = Field(description="HTTPS URL of the PDF proof document")
-
-    @field_validator("proof_document_url")
-    @classmethod
-    def must_be_pdf_url(cls, v: str) -> str:
-        # Basic HTTP/HTTPS format check
-        validate_url(v)
-        # Enforce .pdf extension (case-insensitive)
-        if not v.lower().split("?")[0].endswith(".pdf"):
-            raise ValueError(
-                "proof_document_url must point to a PDF file (URL path must end with '.pdf')."
-            )
-        return v
+    proof_document_url: str | None = Field(default=None)
 
 
 class PatentOut(BaseModel):
