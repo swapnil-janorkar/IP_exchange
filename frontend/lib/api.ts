@@ -31,6 +31,14 @@ export interface Patent {
   updated_at: string
 }
 
+export interface ListedPatent {
+  id: number
+  title: string
+  keywords: string
+  ai_summary: string | null
+  created_at: string
+}
+
 export interface PatentCreate {
   title: string
   description: string
@@ -88,6 +96,27 @@ export const createPatent = (body: PatentCreate, token: string) =>
 /** Get all of the current user's patents */
 export const getMyPatents = (token: string, limit = 20, offset = 0) =>
   request<Patent[]>(`/patents/mine?limit=${limit}&offset=${offset}`, { token })
+
+/**
+ * Browse publicly listed patents with optional keyword search.
+ */
+export const getListedPatents = (
+  token: string,
+  q = "",
+  limit = 20,
+  offset = 0
+) => {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  })
+
+  if (q.trim()) {
+    params.set("q", q.trim())
+  }
+
+  return request<ListedPatent[]>(`/patents?${params.toString()}`, { token })
+}
 
 /** Get a single patent by ID */
 export const getPatent = (id: number, token: string) =>
