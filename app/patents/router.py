@@ -11,7 +11,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
-
+from sqlalchemy import select, or_
 from app.core.database import get_db
 from app.auth.dependencies import get_current_user
 from app.auth.models import User
@@ -63,26 +63,48 @@ async def create_patent(
     return patent
 
 
+
 @router.get("", response_model=list[PatentPublicOut])
 async def browse_listed_patents(
-    limit: int = Query(default=20, le=100),
+    q: str | None = Query(default=None, min_length=2, max_length=100),
+    limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> list[Patent]:
     """
-    Public browse for organisations — only ever returns LISTED patents,
-    and PatentPublicOut strips owner_id/proof_document_url/rejection_reason.
-    This is the placeholder for real search (Phase 3/6 add keyword and
-    vector search) — same status filter, same response shape.
+    Keyword-first patent search for organisations.
+
+    Searches title, description, keywords and AI summary.
+    Only LISTED patents are publicly discoverable.
     """
-    result = await db.execute(
-        select(Patent)
-        .where(Patent.status == PatentStatus.LISTED)
+
+    query = select(Patent).where(
+        Patent.status == PatentStatus.LISTED
+    )
+
+    if q and q.strip():
+        search_term = f"%{q.strip()}%"
+
+        query = query.where(
+            or_(
+                Patent.title.ilike(search_term),
+                Patent.description.ilike(search_term),
+                Patent.keywords.ilike(search_term),
+                Patent.ai_summary.ilike(search_term),
+            )
+        )
+
+    query = (
+        query
         .order_by(Patent.created_at.desc())
         .limit(limit)
         .offset(offset)
     )
+
+    result = await db.execute(query)
+
     return list(result.scalars().all())
+
 
 
 @router.get("/mine", response_model=list[PatentOut])
