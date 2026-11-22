@@ -36,12 +36,6 @@ interface UploadedFile {
   error?: string
 }
 
-interface UploadedFile {
-  file: File
-  uploaded: boolean
-  error?: string
-}
-
 // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function StatusBadge({ status }: { status: string }) {

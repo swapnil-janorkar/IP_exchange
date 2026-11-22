@@ -8,10 +8,9 @@ status — once submitted, it's locked until the admin acts on it.
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pathlib import Path
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
-from sqlalchemy import select, or_
 from app.core.database import get_db
 from app.auth.dependencies import get_current_user
 from app.auth.models import User

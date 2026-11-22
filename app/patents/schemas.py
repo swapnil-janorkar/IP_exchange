@@ -8,7 +8,7 @@ casually, since others build on top of them.
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.patents.models import PatentStatus
 

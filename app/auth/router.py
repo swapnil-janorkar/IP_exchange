@@ -13,7 +13,6 @@ GET  /auth/me               — current user profile
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Request
 from app.auth.dependencies import get_current_user
 from app.auth.models import User
 from app.auth.schemas import (
