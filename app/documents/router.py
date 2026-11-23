@@ -14,12 +14,13 @@ from app.auth.dependencies import get_current_user
 from app.auth.models import User, UserRole
 from app.core.audit_models import AuditLog
 from app.core.database import get_db
+from app.deals.service import get_nda_document, has_completed_nda
 from app.documents.storage import (
     InvalidDocumentError,
     UploadTooLargeError,
     save_upload,
 )
-from app.patents.exchange_models import Deal, Document, DocumentType
+from app.patents.exchange_models import Deal, DealStatus, Document, DocumentType
 from app.patents.models import Patent
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -57,6 +58,12 @@ async def upload_document(
             detail="Specify either patent_id or deal_id, not both.",
         )
 
+    if doc_type == DocumentType.NDA and deal_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="An NDA must be attached to a deal.",
+        )
+
     if patent_id is not None:
         patent = await db.get(Patent, patent_id)
 
@@ -82,6 +89,26 @@ async def upload_document(
             raise HTTPException(
                 403,
                 "You cannot attach a document to this deal.",
+            )
+
+        if deal.status == DealStatus.CANCELLED:
+            raise HTTPException(409, "You cannot attach documents to a cancelled deal.")
+
+        if doc_type == DocumentType.NDA:
+            if user.id != deal.seller_id and user.role != UserRole.ADMIN:
+                raise HTTPException(
+                    403,
+                    "Only the patent owner can upload the deal NDA.",
+                )
+            if await get_nda_document(db, deal.id) is not None:
+                raise HTTPException(
+                    409,
+                    "An NDA has already been uploaded for this deal.",
+                )
+        elif not await has_completed_nda(db, deal):
+            raise HTTPException(
+                403,
+                "Both parties must sign the NDA before deal documents can be shared.",
             )
 
     saved_path = None

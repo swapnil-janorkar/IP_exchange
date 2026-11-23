@@ -110,6 +110,27 @@ class DealOut(BaseModel):
     updated_at: datetime
 
 
+class DealSummaryOut(DealOut):
+    patent_title: str
+    nda_document_id: int | None
+    nda_signed_by: list[int]
+    nda_complete: bool
+
+
+class DealDocumentOut(BaseModel):
+    id: int
+    file_name: str
+    doc_type: DocumentType
+    mime_type: str
+    size_bytes: int
+    created_at: datetime
+    download_url: str
+
+
+class DealDetailOut(DealSummaryOut):
+    nda_document: DealDocumentOut | None
+
+
 # ---------------------------------------------------------------------------
 # Signature schemas
 # ---------------------------------------------------------------------------

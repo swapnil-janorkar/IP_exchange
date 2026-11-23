@@ -50,6 +50,37 @@ export interface PatentDocument {
   created_at: string
 }
 
+export interface DealSummary {
+  id: number
+  patent_id: number
+  seller_id: number
+  buyer_id: number
+  status: "initiated" | "negotiating" | "pending_signature" | "signed" | "completed" | "cancelled"
+  price_cents: number | null
+  currency: string
+  notes: string | null
+  created_at: string
+  updated_at: string
+  patent_title: string
+  nda_document_id: number | null
+  nda_signed_by: number[]
+  nda_complete: boolean
+}
+
+export interface DealDocument {
+  id: number
+  file_name: string
+  doc_type: string
+  mime_type: string
+  size_bytes: number
+  created_at: string
+  download_url: string
+}
+
+export interface DealDetail extends DealSummary {
+  nda_document: DealDocument | null
+}
+
 export interface PatentCreate {
   title: string
   description: string
@@ -250,4 +281,69 @@ export const semanticSearch = (
 /** Fetch a single LISTED patent by ID for the public detail view */
 export const getPublicPatent = (id: number, token: string) =>
   request<ListedPatent>(`/search/patents/${id}`, { token })
+
+// ─── Deals and NDA-gated documents ──────────────────────────────────────────
+
+/** Create a deal by expressing interest in a listed patent. */
+export const expressInterest = (patent_id: number, token: string) =>
+  request<DealSummary>("/deals", {
+    method: "POST",
+    body: JSON.stringify({ patent_id }),
+    token,
+  })
+
+/** List the deals involving the current user. */
+export const getMyDeals = (token: string) =>
+  request<DealSummary[]>("/deals/mine", { token })
+
+/** Get a deal and its NDA signing state. */
+export const getDeal = (id: number, token: string) =>
+  request<DealDetail>(`/deals/${id}`, { token })
+
+/** Upload the seller's configurable NDA document for a deal. */
+export const uploadDealNda = (dealId: number, file: File, token: string) => {
+  const form = new FormData()
+  form.append("file", file)
+  form.append("doc_type", "nda")
+  form.append("deal_id", String(dealId))
+  return request<{
+    id: number
+    file_name: string
+    doc_type: string
+    mime_type: string
+    size_bytes: number
+    created_at: string
+  }>("/documents/upload", {
+    method: "POST",
+    body: form,
+    token,
+  })
+}
+
+/** Record the authenticated party's assent to the uploaded NDA. */
+export const signDealNda = (id: number, token: string) =>
+  request<DealDetail>(`/deals/${id}/nda/sign`, { method: "POST", token })
+
+/** List the NDA or, after both signatures, all documents shared in the deal. */
+export const getDealDocuments = (id: number, token: string) =>
+  request<DealDocument[]>(`/deals/${id}/documents`, { token })
+
+/** Download an NDA or a document shared through a signed deal. */
+export const downloadDealDocument = async (
+  dealId: number,
+  documentId: number,
+  token: string,
+): Promise<Blob> => {
+  const res = await fetch(
+    `${API_BASE}/deals/${dealId}/documents/${documentId}/download`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data?.detail ?? `Download failed: ${res.status} ${res.statusText}`)
+  }
+
+  return res.blob()
+}
 

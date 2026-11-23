@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import {
@@ -16,7 +16,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { useAuth } from "@/contexts/auth-context"
-import { getPublicPatent, type ListedPatent } from "@/lib/api"
+import { expressInterest, getPublicPatent, type ListedPatent } from "@/lib/api"
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("en-US", {
@@ -27,6 +27,23 @@ function formatDate(value: string) {
 }
 
 export default function PatentDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen violet-gradient-bg flex items-center justify-center">
+          <div className="flex items-center gap-3 opacity-60">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Loading patent…
+          </div>
+        </main>
+      }
+    >
+      <PatentDetailContent />
+    </Suspense>
+  )
+}
+
+function PatentDetailContent() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const { user, isAuthenticated } = useAuth()
@@ -34,16 +51,33 @@ export default function PatentDetailPage() {
   const [patent, setPatent] = useState<ListedPatent | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [interestError, setInterestError] = useState<string | null>(null)
+  const [isStartingDeal, setIsStartingDeal] = useState(false)
+  const invalidPatentId = Number.isNaN(Number(id))
+
+  const handleExpressInterest = async () => {
+    if (!user || !patent) return
+    setInterestError(null)
+    setIsStartingDeal(true)
+    try {
+      const deal = await expressInterest(patent.id, user.access_token)
+      router.push(`/deals/${deal.id}`)
+    } catch (interestFailure) {
+      setInterestError(
+        interestFailure instanceof Error
+          ? interestFailure.message
+          : "Could not create a deal.",
+      )
+    } finally {
+      setIsStartingDeal(false)
+    }
+  }
 
   useEffect(() => {
     if (!isAuthenticated || !user) return
 
     const patentId = Number(id)
-    if (isNaN(patentId)) {
-      setError("Invalid patent ID.")
-      setIsLoading(false)
-      return
-    }
+    if (invalidPatentId) return
 
     getPublicPatent(patentId, user.access_token)
       .then(setPatent)
@@ -51,7 +85,7 @@ export default function PatentDetailPage() {
         setError(err instanceof Error ? err.message : "Failed to load patent.")
       )
       .finally(() => setIsLoading(false))
-  }, [id, user, isAuthenticated])
+  }, [id, user, isAuthenticated, invalidPatentId])
 
   if (!isAuthenticated || !user) {
     return (
@@ -72,27 +106,32 @@ export default function PatentDetailPage() {
     <main className="min-h-screen violet-gradient-bg">
       <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
         {/* Back button */}
-        <button
-          onClick={() => router.back()}
-          className="mb-8 flex items-center gap-2 text-sm font-medium opacity-60 hover:opacity-100 transition-opacity"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to search
-        </button>
+        <div className="mb-8 flex items-center justify-between">
+          <button
+            onClick={() => router.back()}
+            className="flex items-center gap-2 text-sm font-medium opacity-60 hover:opacity-100 transition-opacity"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to search
+          </button>
+          <Link href="/deals" className="text-sm font-medium text-primary hover:underline">
+            My deals
+          </Link>
+        </div>
 
-        {isLoading && (
+        {isLoading && !invalidPatentId && (
           <div className="flex flex-col items-center gap-3 py-24">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
             <p className="text-sm opacity-50">Loading patent…</p>
           </div>
         )}
 
-        {error && (
+        {(invalidPatentId || error) && (
           <Card className="glass-card border-0">
             <CardContent className="flex items-center gap-3 p-6">
               <AlertCircle className="h-5 w-5 shrink-0" style={{ color: "hsl(0 84% 60%)" }} />
               <p className="text-sm font-medium" style={{ color: "hsl(0 84% 60%)" }}>
-                {error}
+                {invalidPatentId ? "Invalid patent ID." : error}
               </p>
             </CardContent>
           </Card>
@@ -210,21 +249,31 @@ export default function PatentDetailPage() {
                 <div>
                   <h3 className="font-bold text-sm">Interested in this patent?</h3>
                   <p className="text-xs opacity-50 mt-0.5">
-                    Contact the IP Exchange team to initiate a licensing or acquisition deal.
+                    Start a deal. Documents stay private until both parties sign the NDA.
                   </p>
                 </div>
-                <Button
-                  className="shrink-0"
-                  style={{
-                    background: "hsl(243 75% 65%)",
-                    color: "#fff",
-                    boxShadow: "0 4px 20px hsl(243 75% 65% / 0.3)",
-                  }}
-                >
-                  Express Interest
-                </Button>
+                {user.role === "organisation" && (
+                  <Button
+                    className="shrink-0"
+                    disabled={isStartingDeal}
+                    onClick={handleExpressInterest}
+                    style={{
+                      background: "hsl(243 75% 65%)",
+                      color: "#fff",
+                      boxShadow: "0 4px 20px hsl(243 75% 65% / 0.3)",
+                    }}
+                  >
+                    {isStartingDeal && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {isStartingDeal ? "Creating deal…" : "Express Interest"}
+                  </Button>
+                )}
               </CardContent>
             </Card>
+            {interestError && (
+              <p role="alert" className="text-sm font-medium text-red-400">
+                {interestError}
+              </p>
+            )}
           </div>
         )}
       </div>

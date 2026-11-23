@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback, useRef } from "react"
+import Link from "next/link"
 import {
   Plus, Lightbulb, Loader2, AlertCircle, FileText, Calendar,
   RefreshCw, ChevronDown, ChevronUp, ExternalLink, Sparkles,
@@ -495,6 +496,9 @@ export default function PatentsPage() {
             <p className="text-sm opacity-50 mt-1">Manage, track, and submit your inventions</p>
           </div>
           <div className="flex gap-2 pt-1">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/deals">My Deals</Link>
+            </Button>
             <Button variant="outline" size="sm" onClick={loadPatents} disabled={isLoading}>
               <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
               Refresh

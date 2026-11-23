@@ -43,3 +43,19 @@ See the project plan for who owns which package this phase. Rule of
 thumb: if you're not the owner of a package, don't edit its files —
 open an issue/message instead. `app/main.py` and `docker-compose.yml`
 are shared files — coordinate before touching them.
+
+## Deal, NDA, and document-sharing workflow
+
+- An authenticated organisation creates a deal by calling `POST /deals` with a
+  listed `patent_id` (the Express Interest action). The innovator who owns the
+  patent becomes the seller.
+- The seller uploads the NDA for that deal using `POST /documents/upload` with
+  `doc_type=nda` and the deal's `deal_id`. The platform does not supply or
+  invent NDA terms.
+- Each deal party reviews the uploaded NDA and calls `POST /deals/{deal_id}/nda/sign`.
+  The API records each account's assent, signing time, and SHA-256 document hash.
+- Before both parties sign, only the NDA can be listed or downloaded through
+  the deal. After both signatures, `GET /deals/{deal_id}/documents` exposes the
+  deal documents and all documents attached to the patent; downloads remain
+  deal-scoped through `/deals/{deal_id}/documents/{document_id}/download`.
+- This is recorded in-app assent, not a third-party e-signature integration.
