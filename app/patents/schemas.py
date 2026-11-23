@@ -76,6 +76,7 @@ class PatentPublicOut(BaseModel):
 
     id: int
     title: str
+    description: str
     keywords: str
     ai_summary: str | None
     created_at: datetime

@@ -34,6 +34,7 @@ export interface Patent {
 export interface ListedPatent {
   id: number
   title: string
+  description: string
   keywords: string
   ai_summary: string | null
   created_at: string
@@ -222,4 +223,31 @@ export const requestPatentInfo = (id: number, message: string, token: string) =>
 /** Mark a LISTED patent as SOLD */
 export const markPatentSold = (id: number, token: string) =>
   request<Patent>(`/verification/${id}/mark-sold`, { method: "POST", token })
+
+// ─── Semantic Search ──────────────────────────────────────────────────────────
+
+export interface SemanticResult {
+  patent: ListedPatent
+  score: number
+  search_type: "semantic" | "keyword_fallback"
+}
+
+/**
+ * Semantic search: embeds query with OpenAI, scores by cosine similarity.
+ * Falls back to keyword search when no API key is configured.
+ */
+export const semanticSearch = (
+  query: string,
+  token: string,
+  top_k = 10,
+): Promise<SemanticResult[]> =>
+  request<SemanticResult[]>("/search/semantic", {
+    method: "POST",
+    body: JSON.stringify({ query, top_k }),
+    token,
+  })
+
+/** Fetch a single LISTED patent by ID for the public detail view */
+export const getPublicPatent = (id: number, token: string) =>
+  request<ListedPatent>(`/search/patents/${id}`, { token })
 
