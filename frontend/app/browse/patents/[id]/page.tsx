@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import {
@@ -27,6 +27,23 @@ function formatDate(value: string) {
 }
 
 export default function PatentDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen violet-gradient-bg flex items-center justify-center">
+          <div className="flex items-center gap-3 opacity-60">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Loading patent…
+          </div>
+        </main>
+      }
+    >
+      <PatentDetailContent />
+    </Suspense>
+  )
+}
+
+function PatentDetailContent() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const { user, isAuthenticated } = useAuth()
@@ -34,16 +51,13 @@ export default function PatentDetailPage() {
   const [patent, setPatent] = useState<ListedPatent | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const invalidPatentId = Number.isNaN(Number(id))
 
   useEffect(() => {
     if (!isAuthenticated || !user) return
 
     const patentId = Number(id)
-    if (isNaN(patentId)) {
-      setError("Invalid patent ID.")
-      setIsLoading(false)
-      return
-    }
+    if (invalidPatentId) return
 
     getPublicPatent(patentId, user.access_token)
       .then(setPatent)
@@ -51,7 +65,7 @@ export default function PatentDetailPage() {
         setError(err instanceof Error ? err.message : "Failed to load patent.")
       )
       .finally(() => setIsLoading(false))
-  }, [id, user, isAuthenticated])
+  }, [id, user, isAuthenticated, invalidPatentId])
 
   if (!isAuthenticated || !user) {
     return (
@@ -80,19 +94,19 @@ export default function PatentDetailPage() {
           Back to search
         </button>
 
-        {isLoading && (
+        {isLoading && !invalidPatentId && (
           <div className="flex flex-col items-center gap-3 py-24">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
             <p className="text-sm opacity-50">Loading patent…</p>
           </div>
         )}
 
-        {error && (
+        {(invalidPatentId || error) && (
           <Card className="glass-card border-0">
             <CardContent className="flex items-center gap-3 p-6">
               <AlertCircle className="h-5 w-5 shrink-0" style={{ color: "hsl(0 84% 60%)" }} />
               <p className="text-sm font-medium" style={{ color: "hsl(0 84% 60%)" }}>
-                {error}
+                {invalidPatentId ? "Invalid patent ID." : error}
               </p>
             </CardContent>
           </Card>
