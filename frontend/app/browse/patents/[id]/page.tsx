@@ -209,7 +209,10 @@ function PatentDetailContent() {
                 </div>
 
                 {patent.ai_summary ? (
-                  <p className="text-sm leading-relaxed opacity-80">{patent.ai_summary}</p>
+                  <p className="text-sm leading-relaxed opacity-80 whitespace-pre-wrap">
+                    {/* Strip markdown bold markers for clean display */}
+                    {patent.ai_summary.replace(/\*\*(.*?)\*\*/g, "$1")}
+                  </p>
                 ) : (
                   <div
                     className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm"
@@ -219,7 +222,7 @@ function PatentDetailContent() {
                     }}
                   >
                     <Bot className="h-4 w-4 opacity-40" />
-                    <span className="opacity-50">AI summary not yet available for this patent.</span>
+                    <span className="opacity-50">AI summary is being generated — refresh in a moment.</span>
                   </div>
                 )}
               </CardContent>

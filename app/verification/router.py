@@ -194,6 +194,45 @@ async def list_patent(
 
 
 # ---------------------------------------------------------------------------
+# Regenerate AI summary on demand
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{patent_id}/regenerate-summary", response_model=PatentOut)
+async def regenerate_summary(
+    patent_id: int,
+    background_tasks: BackgroundTasks,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> Patent:
+    """
+    Force-regenerate the AI summary (and embedding) for a patent.
+
+    Useful after:
+    - Adding / restoring an OpenAI API key
+    - Updating a patent's description after approval
+    - The original background task failed silently
+
+    Works on VERIFIED or LISTED patents.
+    """
+    patent = await _get_patent_or_404(patent_id, db)
+    if patent.status not in {PatentStatus.VERIFIED, PatentStatus.LISTED}:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Patent must be VERIFIED or LISTED to regenerate summary (is '{patent.status.value}')",
+        )
+
+    # Clear existing summary so caller can see it's being regenerated
+    patent.ai_summary = None
+    await db.commit()
+    await db.refresh(patent)
+
+    background_tasks.add_task(_run_ai_pipeline, patent.id)
+    return patent
+
+
+# ---------------------------------------------------------------------------
 # Background AI pipeline
 # ---------------------------------------------------------------------------
 

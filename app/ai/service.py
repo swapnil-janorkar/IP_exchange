@@ -24,6 +24,56 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _local_summary(patent: "Patent") -> str:
+    """
+    Generate a professional patent summary locally without any external API.
+
+    Uses keyword extraction, description analysis, and structured templates to
+    produce a clean 2-3 sentence summary suitable for marketplace listings.
+    This runs instantly and requires no API credits.
+    """
+    import re
+
+    title: str = patent.title or ""
+    description: str = patent.description or ""
+    keywords: str = patent.keywords or ""
+
+    # Clean up the description
+    desc_clean = re.sub(r"\s+", " ", description).strip()
+
+    # Extract first meaningful sentence(s) from description (up to ~200 chars)
+    sentences = re.split(r"(?<=[.!?])\s+", desc_clean)
+    lead = ""
+    for s in sentences:
+        lead += (" " + s).lstrip() if lead else s
+        if len(lead) >= 120:
+            break
+    if not lead:
+        lead = desc_clean[:200]
+    if len(lead) > 220:
+        lead = lead[:220].rsplit(" ", 1)[0] + "..."
+
+    # Build a keyword phrase (up to 4 keywords)
+    kw_list = [k.strip() for k in keywords.split(",") if k.strip()][:4]
+    kw_phrase = ", ".join(kw_list) if kw_list else ""
+
+    # Compose summary from parts
+    parts = [f"**{title}** is an innovative technology"]
+    if kw_phrase:
+        parts[0] += f" in the domains of {kw_phrase}"
+    parts[0] += "."
+
+    if lead:
+        parts.append(lead if lead.endswith(".") else lead + ".")
+
+    parts.append(
+        "This patent represents a commercially valuable intellectual property asset "
+        "with strong licensing and acquisition potential for industry players."
+    )
+
+    return " ".join(parts)
+
+
 async def generate_patent_summary(patent: "Patent", db: AsyncSession) -> str | None:
     """
     Generate a concise AI summary for the patent and persist it.
@@ -59,7 +109,11 @@ async def generate_patent_summary(patent: "Patent", db: AsyncSession) -> str | N
             summary = response.choices[0].message.content.strip()
             logger.info("OpenAI summary generated for patent #%d", patent.id)
         except Exception as exc:
-            logger.warning("OpenAI summary generation failed for patent #%d: %s", patent.id, exc)
+            logger.warning(
+                "OpenAI summary generation failed for patent #%d: %s — using local summary.",
+                patent.id, exc,
+            )
+            summary = _local_summary(patent)
 
     elif settings.anthropic_api_key:
         try:
@@ -73,19 +127,18 @@ async def generate_patent_summary(patent: "Patent", db: AsyncSession) -> str | N
             summary = response.content[0].text.strip()
             logger.info("Anthropic summary generated for patent #%d", patent.id)
         except Exception as exc:
-            logger.warning("Anthropic summary generation failed for patent #%d: %s", patent.id, exc)
+            logger.warning(
+                "Anthropic summary generation failed for patent #%d: %s — using local summary.",
+                patent.id, exc,
+            )
+            summary = _local_summary(patent)
 
     else:
         logger.info(
-            "No AI API key configured — skipping summary generation for patent #%d. "
-            "Set OPENAI_API_KEY or ANTHROPIC_API_KEY in .env to enable.",
+            "No AI API key configured — using local summary for patent #%d.",
             patent.id,
         )
-        # Return a placeholder summary so the patent is not left blank in dev
-        summary = (
-            f"[AI summary not configured] {patent.title}: "
-            f"{patent.description[:200]}{'...' if len(patent.description) > 200 else ''}"
-        )
+        summary = _local_summary(patent)
 
     if summary:
         patent.ai_summary = summary
